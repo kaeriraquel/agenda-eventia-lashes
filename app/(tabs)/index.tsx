@@ -1,98 +1,250 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+// app/(tabs)/index.tsx
+import React from 'react';
+import { Colors } from '../../constants/theme';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useAppointments } from '../../context/AppointmentsContext';
+import { useBrand } from '../../context/BrandContext';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const router = useRouter();
+  const { appointments, getAppointmentsByDate } = useAppointments();
+  const { brandName, logoUri } = useBrand();
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const today = new Date().toISOString().slice(0, 10);
+  const todaysAppointments = getAppointmentsByDate(today);
+  const totalAppointments = appointments.length;
+
+  const totalRevenue = appointments
+    .filter(a => a.status === 'realizada' && a.price != null)
+    .reduce((sum, a) => sum + (a.price ?? 0), 0);
+
+  const handleGoToToday = () => {
+    router.push('/(tabs)/agenda');
+  };
+
+  const handleNewAppointment = () => {
+    router.push('/appointment/new');
+  };
+
+  const handleGoToPrices = () => {
+    router.push('/(tabs)/precios');
+  };
+
+  const handleGoToConfig = () => {
+    router.push('/(tabs)/configuracion');
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* LOGO PRINCIPAL DEL ESTUDIO (Beauty por defecto, pero editable) */}
+      <View style={styles.logoContainer}>
+        {logoUri ? (
+          <Image
+            source={{ uri: logoUri }}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        ) : (
+          <Image
+            // 👇 Asegúrate de guardar aquí tu logo de Beauty
+            // por ejemplo: assets/images/beauty-logo.png
+            source={require('../../assets/images/beauty-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        )}
+      </View>
+
+      <Text style={styles.title}>{brandName}</Text>
+      <Text style={styles.subtitle}>
+        Tu agenda para extensiones, lifting y ceja.
+      </Text>
+
+      <Text style={styles.powered}>
+        hecho con cariño por Eventia SLW
+      </Text>
+
+      <View style={styles.cardsRow}>
+        <View style={styles.card}>
+          <Text style={styles.cardNumber}>{todaysAppointments.length}</Text>
+          <Text style={styles.cardLabel}>Citas para hoy</Text>
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardNumber}>{totalAppointments}</Text>
+          <Text style={styles.cardLabel}>Citas totales</Text>
+        </View>
+      </View>
+
+      <View style={styles.cardsRow}>
+        <View style={[styles.card, styles.fullWidthCard]}>
+          <Text style={styles.cardLabel}>Total recaudado (realizadas)</Text>
+          <Text style={[styles.cardNumber, styles.moneyText]}>
+            ${totalRevenue.toFixed(2)} MXN
+          </Text>
+        </View>
+      </View>
+
+      <TouchableOpacity style={styles.mainButton} onPress={handleGoToToday}>
+        <Text style={styles.mainButtonText}>Ver agenda</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.mainButton, styles.configButton]}
+        onPress={handleNewAppointment}
+      >
+        <Text style={styles.configButtonText}>Agregar nueva cita</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.mainButton, styles.configButton]}
+        onPress={handleGoToPrices}
+      >
+        <Text style={styles.configButtonText}>Ver lista de precios</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.mainButton, styles.configButton]}
+        onPress={handleGoToConfig}
+      >
+        <Text style={styles.configButtonText}>Configurar mi marca</Text>
+      </TouchableOpacity>
+
+      <View style={{ height: 40 }} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: Colors.screenBackground,
     alignItems: 'center',
-    gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  logoContainer: {
+    marginTop: 40,
+    marginBottom: 12,
+    width: 180,
+    height: 80,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  logo: {
+    width: '100%',
+    height: '100%',
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '600',
+    textAlign: 'center',
+    color: Colors.text,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  powered: {
+    fontSize: 11,
+    color: Colors.textSubtle,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  cardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  card: {
+    flex: 1,
+    backgroundColor: Colors.cardBackground,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  fullWidthCard: {
+    flex: 1,
+  },
+  cardNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  moneyText: {
+    fontSize: 22,
+  },
+  cardLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  mainButton: {
+    width: '100%',
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    borderRadius: 999,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  mainButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    width: '100%',
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    paddingVertical: 14,
+    borderRadius: 999,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  secondaryButtonText: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tertiaryButton: {
+    width: '100%',
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    paddingVertical: 14,
+    borderRadius: 999,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  tertiaryButtonText: {
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  configButton: {
+    width: '100%',
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.primarySoft,
+    paddingVertical: 14,
+    borderRadius: 999,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  configButtonText: {
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

@@ -1,34 +1,77 @@
-import { Tabs } from 'expo-router';
+// app/(tabs)/_layout.tsx
 import React from 'react';
+import { Tabs } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Colors } from '../../constants/theme';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function TabsLayout() {
   return (
     <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+      screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textSubtle,
+        tabBarShowLabel: true,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '500',
+        },
+        tabBarStyle: {
+          backgroundColor: Colors.tabBarBackground,
+          borderTopColor: Colors.tabBarBorder,
+          borderTopWidth: 1,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOpacity: 0.06,
+          shadowOffset: { width: 0, height: -2 },
+          shadowRadius: 6,
+          height: 64,
+          paddingBottom: 8,
+        },
+        tabBarIcon: ({ color, size, focused }) => {
+          let iconName: keyof typeof Ionicons.glyphMap = 'ellipse';
+
+          if (route.name === 'index') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'agenda') {
+            iconName = focused ? 'calendar' : 'calendar-outline';
+          } else if (route.name === 'precios') {
+            iconName = focused ? 'pricetag' : 'pricetag-outline';
+          } else if (route.name === 'estadisticas') {
+            iconName = focused ? 'bar-chart' : 'bar-chart-outline';
+          } else if (route.name === 'clientas') {
+            iconName = focused ? 'people' : 'people-outline';
+          }else if (route.name === 'configuracion') {
+            iconName = focused ? 'settings' : 'settings-outline';
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+      })}
+    >
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
+        options={{ title: 'Inicio' }}
       />
       <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
+        name="agenda"
+        options={{ title: 'Citas' }}
+      />
+      <Tabs.Screen
+        name="precios"
+        options={{ title: 'Precios' }}
+      />
+      <Tabs.Screen
+        name="estadisticas"
+        options={{ title: 'Resumen' }}
+      />
+      <Tabs.Screen
+        name="clientas"
+        options={{ title: 'Clientas' }}
+      />
+      <Tabs.Screen
+        name="configuracion"
+        options={{ title: 'Mi marca' }}
       />
     </Tabs>
   );
