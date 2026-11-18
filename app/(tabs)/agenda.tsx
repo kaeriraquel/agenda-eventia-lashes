@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useAppointments } from '../../context/AppointmentsContext';
 import { Colors } from '../../constants/theme';
+import { toLocalDateKey, parseDateKey } from '../../lib/dates';
 
 export default function AgendaScreen() {
   const { appointments } = useAppointments();
@@ -20,7 +21,7 @@ export default function AgendaScreen() {
 
   const [range, setRange] = useState<RangeFilter>('7dias');
 
-  const toDateKey = (d: Date) => d.toISOString().slice(0, 10);
+  const toDateKey = toLocalDateKey;
 
   const isInRange = (dateStr: string, range: RangeFilter) => {
     if (!dateStr) return false;
@@ -28,7 +29,7 @@ export default function AgendaScreen() {
     const start = new Date(today);
     start.setHours(0, 0, 0, 0);
 
-    const d = new Date(dateStr);
+    const d = parseDateKey(dateStr);
     if (isNaN(d.getTime())) return false;
 
     const dayKey = toDateKey(d);
@@ -61,15 +62,15 @@ export default function AgendaScreen() {
   // Helper para mostrar fecha bonita
   const formatDateForLabel = (dateStr: string): string => {
     const today = new Date();
-    const d = new Date(dateStr);
+    const d = parseDateKey(dateStr);
     if (isNaN(d.getTime())) return dateStr;
 
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = toLocalDateKey(today);
     const tomorrow = new Date();
     tomorrow.setDate(today.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+    const tomorrowStr = toLocalDateKey(tomorrow);
 
-    const onlyDateStr = d.toISOString().slice(0, 10);
+    const onlyDateStr = toLocalDateKey(d);
 
     if (onlyDateStr === todayStr) return 'Hoy';
     if (onlyDateStr === tomorrowStr) return 'Mañana';

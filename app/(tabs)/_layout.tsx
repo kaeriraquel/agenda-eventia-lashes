@@ -69,6 +69,11 @@ export default function TabsLayout() {
         name="clientas"
         options={{ title: 'Clientas' }}
       />
+      {/* Pantalla de clientas en la nube: aún sin terminar, se oculta de la barra */}
+      <Tabs.Screen
+        name="clientes"
+        options={{ href: null }}
+      />
       <Tabs.Screen
         name="configuracion"
         options={{ title: 'Mi marca' }}

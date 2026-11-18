@@ -19,7 +19,8 @@ export type AppointmentStatus =
   | 'cancelada'
   | 'no_asistio';
 
-export interface TechnicalSheet {
+export type LashesTechnicalSheet = {
+  kind: 'lashes';
   applicationType: string;
   eyeShape: string;
   curl: string;
@@ -28,16 +29,31 @@ export interface TechnicalSheet {
   design: string;
   adhesive: string;
   notes?: string;
-}
+};
+
+export type NailsTechnicalSheet = {
+  kind: 'nails';
+  technique: string;        // Gel / Acrílico / Polygel...
+  shape: string;            // Almond, square...
+  length: string;           // Cortas/Medias/Largas o “#2/#3”
+  color: string;            // Color principal / tonos
+  design: string;           // Nail art / french / etc.
+  finish: string;           // Mate/Brillante
+  removal: boolean;         // ¿hubo retiro?
+  notes?: string;
+};
+
+export type TechnicalSheet = LashesTechnicalSheet | NailsTechnicalSheet;
 
 export type ServiceModule = 'lashes' | 'nails';
 
 export interface Appointment {
-  id: string; // local id (gratis) o uuid (pro)
+  id: string;
+  clientId?: string | null; // ✅ NUEVO
   clientName: string;
   service: string;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:MM
+  date: string;
+  time: string;
   phone?: string;
   notes?: string;
   price?: number | null;
@@ -45,10 +61,9 @@ export interface Appointment {
   technicalSheet?: TechnicalSheet | null;
   mappingLeft?: string | null;
   mappingRight?: string | null;
-
-  // ✅ NUEVO: para multi-servicios (pestañas/uñas/etc.)
-  module?: ServiceModule;
+  module?: ServiceModule; // si ya lo estás usando
 }
+
 
 interface AppointmentsContextValue {
   appointments: Appointment[];
@@ -61,6 +76,7 @@ interface AppointmentsContextValue {
     date: string;
     time: string;
     clientName: string;
+    clientId?: string | null; // ✅ AGREGAR
     service: string;
     notes?: string;
     phone?: string;
@@ -73,6 +89,8 @@ interface AppointmentsContextValue {
     updates: Partial<Appointment>
   ) => Promise<void>;
 
+  deleteAppointment: (id: string) => Promise<void>;
+
   getAppointmentsByDate: (date: string) => Appointment[];
 }
 
@@ -84,8 +102,9 @@ const AppointmentsContext = createContext<AppointmentsContextValue | undefined>(
 
 /** ===== DB <-> APP ===== */
 type DbAppointment = {
-  id: string; // uuid
+  id: string;
   user_id: string;
+  client_id: string | null; // ✅ NUEVO
   client_name: string;
   phone: string | null;
   service_name: string;
@@ -94,39 +113,35 @@ type DbAppointment = {
   notes: string | null;
   price: number | null;
   status: string;
-  technical_sheet: any | null; // jsonb
+  technical_sheet: any | null;
   mapping_left: string | null;
   mapping_right: string | null;
-
-  // opcionales (por si ya los agregaste)
-  module: string | null;
-  source_local_id: string | null;
-
-  created_at?: string;
-  updated_at?: string;
+  module: string | null; // si existe
 };
 
 function dbToApp(row: DbAppointment): Appointment {
   return {
     id: row.id,
-    clientName: row.client_name ?? '',
+    clientId: row.client_id, // ✅ NUEVO
+    clientName: row.client_name,
     phone: row.phone ?? '',
-    service: row.service_name ?? '',
-    date: row.date ?? '',
-    time: row.time ?? '',
+    service: row.service_name,
+    date: row.date,
+    time: row.time,
     notes: row.notes ?? '',
     price: row.price ?? null,
     status: (row.status as AppointmentStatus) ?? 'pendiente',
     technicalSheet: (row.technical_sheet as TechnicalSheet) ?? null,
     mappingLeft: row.mapping_left ?? null,
     mappingRight: row.mapping_right ?? null,
-    module: (row.module as ServiceModule) ?? 'lashes',
+    module: (row.module as any) ?? 'lashes',
   };
 }
 
 function appToDbInsert(userId: string, appt: Omit<Appointment, 'id'>) {
   return {
     user_id: userId,
+    client_id: appt.clientId ?? null, // ✅ NUEVO
     client_name: appt.clientName,
     phone: appt.phone ?? null,
     service_name: appt.service,
@@ -138,12 +153,13 @@ function appToDbInsert(userId: string, appt: Omit<Appointment, 'id'>) {
     technical_sheet: appt.technicalSheet ?? null,
     mapping_left: appt.mappingLeft ?? null,
     mapping_right: appt.mappingRight ?? null,
-    module: appt.module ?? 'lashes',
+    module: (appt.module as any) ?? 'lashes',
   };
 }
 
 function appToDbUpdate(updates: Partial<Appointment>) {
   return {
+    client_id: updates.clientId === undefined ? undefined : updates.clientId ?? null,
     client_name: updates.clientName,
     phone: updates.phone === undefined ? undefined : updates.phone ?? null,
     service_name: updates.service,
@@ -219,6 +235,7 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
     date: string;
     time: string;
     clientName: string;
+    clientId?: string | null;
     service: string;
     notes?: string;
     phone?: string;
@@ -226,12 +243,13 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
     module?: ServiceModule;
   }) {
     const payload: Omit<Appointment, 'id'> = {
+      clientId: data.clientId ?? null, // ✅ NUEVO
       date: data.date,
       time: data.time,
       clientName: data.clientName,
+      phone: data.phone ?? '',
       service: data.service,
       notes: data.notes ?? '',
-      phone: data.phone ?? '',
       price: data.price ?? null,
       status: 'pendiente',
       technicalSheet: null,
@@ -239,6 +257,7 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
       mappingRight: null,
       module: data.module ?? 'lashes',
     };
+
 
     // PRO: insertar en Supabase y agregar al state
     if (isPro && user?.id) {
@@ -293,6 +312,29 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
     setAppointments(prev => prev.map(a => (a.id === id ? { ...a, ...updates } : a)));
   }
 
+  async function deleteAppointment(id: string) {
+    // PRO: delete en supabase + actualizar state
+    if (isPro && user?.id) {
+      const { error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error delete supabase:', error);
+        return;
+      }
+
+      setAppointments(prev => prev.filter(a => a.id !== id));
+      return;
+    }
+
+    // GRATIS: delete local
+    setAppointments(prev => prev.filter(a => a.id !== id));
+  }
+
+
   function getAppointmentsByDate(date: string) {
     return appointments
       .filter(appt => appt.date === date)
@@ -306,6 +348,7 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
       refreshAppointments,
       addAppointment,
       updateAppointment,
+      deleteAppointment,
       getAppointmentsByDate,
     }),
     [appointments, loading, refreshAppointments]

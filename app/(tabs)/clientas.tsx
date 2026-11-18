@@ -91,10 +91,15 @@ export default function ClientasScreen() {
         style={styles.card}
         onPress={() =>
           router.push({
-            pathname: '/client/[id]',
-            params: { id: item.id },
+            pathname: '/client/detail',
+            params: {
+              clientKey: item.id,          // tu key actual "name::phone" o "name"
+              name: item.name,
+              phone: item.phone ?? '',
+            },
           })
         }
+
       >
         <View style={styles.cardRow}>
           <View style={{ flex: 1 }}>

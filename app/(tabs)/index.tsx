@@ -11,13 +11,14 @@ import {
 import { useRouter } from 'expo-router';
 import { useAppointments } from '../../context/AppointmentsContext';
 import { useBrand } from '../../context/BrandContext';
+import { todayKey } from '../../lib/dates';
 
 export default function HomeScreen() {
   const router = useRouter();
   const { appointments, getAppointmentsByDate } = useAppointments();
   const { brandName, logoUri } = useBrand();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKey();
   const todaysAppointments = getAppointmentsByDate(today);
   const totalAppointments = appointments.length;
 

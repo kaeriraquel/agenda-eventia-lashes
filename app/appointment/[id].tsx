@@ -10,11 +10,11 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Linking, 
+  Linking,
 } from 'react-native';
 import { MappingCanvas } from '../../components/MappingCanvas';
 
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAppointments } from '../../context/AppointmentsContext';
 import type { AppointmentStatus } from '../../context/AppointmentsContext';
 import { SelectField } from '../../components/SelectField';
@@ -31,6 +31,12 @@ const ADHESIVE_OPTIONS = [
   'Otro',
 ];
 
+// ===== NAILS OPTIONS =====
+const NAILS_TECHNIQUE_OPTIONS = ['Gel semipermanente', 'Acrílico', 'Polygel', 'Baño de acrílico', 'Tip / Escultural', 'Otro'];
+const NAILS_SHAPE_OPTIONS = ['Almendra', 'Cuadrada', 'Coffin', 'Stiletto', 'Redonda', 'Squoval'];
+const NAILS_LENGTH_OPTIONS = ['Cortas', 'Medias', 'Largas', 'Extra largas'];
+const NAILS_FINISH_OPTIONS = ['Brillante', 'Mate', 'Glitter', 'Chrome', 'Otro'];
+
 const SERVICE_OPTIONS = [
   'Extensiones clásicas 1x1',
   'Extensiones híbridas',
@@ -46,7 +52,7 @@ const SERVICE_OPTIONS = [
 
 export default function AppointmentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { appointments, updateAppointment } = useAppointments();
+  const { appointments, updateAppointment, deleteAppointment } = useAppointments();
 
   const appointment = appointments.find(a => a.id === id);
 
@@ -64,7 +70,7 @@ export default function AppointmentDetailScreen() {
   const [generalNotes, setGeneralNotes] = useState('');
   const [priceStr, setPriceStr] = useState(''); // precio texto
 
-  // --- ESTADOS FICHA TÉCNICA ---
+  // --- ESTADOS FICHA TÉCNICA LASHES---
   const [applicationType, setApplicationType] = useState('');
   const [eyeShape, setEyeShape] = useState('');
   const [curl, setCurl] = useState('');
@@ -75,21 +81,26 @@ export default function AppointmentDetailScreen() {
   const [customAdhesive, setCustomAdhesive] = useState('');
   const [techNotes, setTechNotes] = useState('');
 
+  // --- ESTADOS FICHA TÉCNICA (NAILS) ---
+  const [nTechnique, setNTechnique] = useState('');
+  const [nShape, setNShape] = useState('');
+  const [nLength, setNLength] = useState('');
+  const [nColor, setNColor] = useState('');
+  const [nDesign, setNDesign] = useState('');
+  const [nFinish, setNFinish] = useState('');
+  const [nRemoval, setNRemoval] = useState(false);
+  const [nNotes, setNNotes] = useState('');
+
   // Helper para resetear ficha técnica desde la cita
+  const isNails = (appointment?.module ?? 'lashes') === 'nails';
+
   const resetTechnicalFromAppointment = () => {
     if (!appointment) return;
 
-    if (appointment.technicalSheet) {
-      const t = appointment.technicalSheet;
-      setApplicationType(t.applicationType || '');
-      setEyeShape(t.eyeShape || '');
-      setCurl(t.curl || '');
-      setLengths(t.lengths || '');
-      setThickness(t.thickness || '');
-      setDesign(t.design || '');
-      setAdhesive(t.adhesive || '');
-      setTechNotes(t.notes || '');
-    } else {
+    const t: any = appointment.technicalSheet;
+
+    if (!t) {
+      // lashes
       setApplicationType('');
       setEyeShape('');
       setCurl('');
@@ -98,7 +109,51 @@ export default function AppointmentDetailScreen() {
       setDesign('');
       setAdhesive('');
       setTechNotes('');
+      setCustomAdhesive('');
+      //nails
+      setNTechnique('');
+      setNShape('');
+      setNLength('');
+      setNColor('');
+      setNDesign('');
+      setNFinish('');
+      setNRemoval(false);
+      setNNotes('');
+      return;
     }
+    // Si es nails (por módulo o por kind), carga nails
+    if ((appointment.module ?? 'lashes') === 'nails' || t.kind === 'nails') {
+      setNTechnique(t.technique || '');
+      setNShape(t.shape || '');
+      setNLength(t.length || '');
+      setNColor(t.color || '');
+      setNDesign(t.design || '');
+      setNFinish(t.finish || '');
+      setNRemoval(!!t.removal);
+      setNNotes(t.notes || '');
+
+      // opcional: limpia lashes para evitar que se vea “basura” si cambian módulos
+      setApplicationType('');
+      setEyeShape('');
+      setCurl('');
+      setLengths('');
+      setThickness('');
+      setDesign('');
+      setAdhesive('');
+      setTechNotes('');
+      setCustomAdhesive('');
+      return;
+    }
+
+    // lashes (default)
+    setApplicationType(t.applicationType || '');
+    setEyeShape(t.eyeShape || '');
+    setCurl(t.curl || '');
+    setLengths(t.lengths || '');
+    setThickness(t.thickness || '');
+    setDesign(t.design || '');
+    setAdhesive(t.adhesive || '');
+    setTechNotes(t.notes || '');
     setCustomAdhesive('');
   };
 
@@ -167,13 +222,13 @@ export default function AppointmentDetailScreen() {
     }
 
     updateAppointment(appointment.id, {
-    clientName: clientName.trim(),
-    phone: phone.trim(),
-    service: finalService.trim(),
-    date: dateStr.trim(),
-    time: timeStr.trim(),
-    notes: generalNotes.trim(),
-    price: priceNumber,
+      clientName: clientName.trim(),
+      phone: phone.trim(),
+      service: finalService.trim(),
+      date: dateStr.trim(),
+      time: timeStr.trim(),
+      notes: generalNotes.trim(),
+      price: priceNumber,
     });
 
     Alert.alert('Cita actualizada', 'Los datos de la cita se guardaron.');
@@ -203,16 +258,58 @@ export default function AppointmentDetailScreen() {
     setIsEditingGeneral(false);
   };
 
+  const handleDelete = () => {
+    Alert.alert(
+      'Eliminar cita',
+      '¿Seguro que deseas eliminar esta cita? Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteAppointment(appointment.id);
+            Alert.alert('Listo', 'Cita eliminada.');
+            router.back();
+          },
+        },
+      ]
+    );
+  };
+
+
   const saveTechnicalSheet = () => {
+    if ((appointment.module ?? 'lashes') === 'nails') {
+      updateAppointment(appointment.id, {
+        technicalSheet: {
+          kind: 'nails',
+          technique: nTechnique,
+          shape: nShape,
+          length: nLength,
+          color: nColor,
+          design: nDesign,
+          finish: nFinish,
+          removal: nRemoval,
+          notes: nNotes,
+        },
+      });
+
+      Alert.alert('Ficha técnica', 'Ficha de uñas guardada.');
+      setIsEditingTechnical(false);
+      return;
+    }
+
+    // lashes
     const finalAdhesive =
       adhesive === 'Adhesivo rápido' ||
-      adhesive === 'Adhesivo sensibilidad' ||
-      adhesive === 'Adhesivo principiante'
+        adhesive === 'Adhesivo sensibilidad' ||
+        adhesive === 'Adhesivo principiante'
         ? adhesive
         : customAdhesive || adhesive;
 
     updateAppointment(appointment.id, {
       technicalSheet: {
+        kind: 'lashes',
         applicationType,
         eyeShape,
         curl,
@@ -224,7 +321,7 @@ export default function AppointmentDetailScreen() {
       },
     });
 
-    Alert.alert('Ficha técnica', 'La ficha técnica se guardó correctamente.');
+    Alert.alert('Ficha técnica', 'Ficha de pestañas guardada.');
     setIsEditingTechnical(false);
   };
 
@@ -251,7 +348,7 @@ export default function AppointmentDetailScreen() {
     );
   };
   // Funciones para llamar o abrir WhatsApp
-    const handleCall = () => {
+  const handleCall = () => {
     if (!phone || phone.trim() === '') {
       Alert.alert('Sin teléfono', 'Esta cita no tiene número de teléfono guardado.');
       return;
@@ -312,7 +409,7 @@ export default function AppointmentDetailScreen() {
               {appointment.date} · {appointment.time}
             </Text>
           </View>
-          
+
           <View
             style={[
               styles.statusBadge,
@@ -324,7 +421,25 @@ export default function AppointmentDetailScreen() {
             </Text>
           </View>
         </View>
-        
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+          {appointment.clientId ? (
+            <TouchableOpacity
+              style={[styles.editChip, { borderColor: '#BDEBFF' }]}
+              onPress={() => router.push({ pathname: '/client/[id]', params: { id: appointment.clientId } })}
+            >
+              <Text style={[styles.editChipText, { color: '#1A7FA8' }]}>Ver clienta</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.editChip, { borderColor: '#FFD0D0' }]}
+            onPress={handleDelete}
+          >
+            <Text style={[styles.editChipText, { color: '#D12C2C' }]}>Eliminar</Text>
+          </TouchableOpacity>
+        </View>
+
 
         {/* DATOS GENERALES */}
         <View style={styles.sectionCard}>
@@ -432,13 +547,13 @@ export default function AppointmentDetailScreen() {
               />
 
               <Text style={styles.label}>Número de teléfono</Text>
-                <TextInput
+              <TextInput
                 style={styles.input}
                 value={phone}
                 onChangeText={setPhone}
                 placeholder="Ej. 8441234567"
                 keyboardType="phone-pad"
-                />
+              />
 
               <TouchableOpacity style={styles.button} onPress={handleSaveGeneral}>
                 <Text style={styles.buttonText}>Guardar cambios de la cita</Text>
@@ -507,150 +622,259 @@ export default function AppointmentDetailScreen() {
 
           {!isEditingTechnical ? (
             // ---- MODO LECTURA FICHA ----
-            <View>
-              <Text style={styles.label}>Tipo de aplicación</Text>
-              <Text style={styles.value}>{displayOrDash(applicationType)}</Text>
+            isNails ? (
+              <View>
+                <Text style={styles.label}>Técnica</Text>
+                <Text style={styles.value}>{displayOrDash(nTechnique)}</Text>
 
-              <Text style={styles.label}>Tipo de ojo</Text>
-              <Text style={styles.value}>{displayOrDash(eyeShape)}</Text>
+                <Text style={styles.label}>Forma</Text>
+                <Text style={styles.value}>{displayOrDash(nShape)}</Text>
 
-              <Text style={styles.label}>Curva</Text>
-              <Text style={styles.value}>{displayOrDash(curl)}</Text>
+                <Text style={styles.label}>Largo</Text>
+                <Text style={styles.value}>{displayOrDash(nLength)}</Text>
 
-              <Text style={styles.label}>Longitudes</Text>
-              <Text style={styles.value}>{displayOrDash(lengths)}</Text>
+                <Text style={styles.label}>Color</Text>
+                <Text style={styles.value}>{displayOrDash(nColor)}</Text>
 
-              <Text style={styles.label}>Grosor</Text>
-              <Text style={styles.value}>{displayOrDash(thickness)}</Text>
+                <Text style={styles.label}>Diseño</Text>
+                <Text style={styles.value}>{displayOrDash(nDesign)}</Text>
 
-              <Text style={styles.label}>Diseño / Mapping</Text>
-              <Text style={styles.value}>{displayOrDash(design)}</Text>
+                <Text style={styles.label}>Acabado</Text>
+                <Text style={styles.value}>{displayOrDash(nFinish)}</Text>
 
-              <Text style={styles.label}>Adhesivo</Text>
-              <Text style={styles.value}>{displayOrDash(adhesive)}</Text>
+                <Text style={styles.label}>¿Incluyó retiro?</Text>
+                <Text style={styles.value}>{nRemoval ? 'Sí' : 'No'}</Text>
 
-              <Text style={styles.label}>Notas técnicas</Text>
-              <Text style={styles.value}>
-                {techNotes.trim() !== '' ? techNotes : '—'}
-              </Text>
-            </View>
+                <Text style={styles.label}>Notas técnicas</Text>
+                <Text style={styles.value}>{nNotes.trim() !== '' ? nNotes : '—'}</Text>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.label}>Tipo de aplicación</Text>
+                <Text style={styles.value}>{displayOrDash(applicationType)}</Text>
+
+                <Text style={styles.label}>Tipo de ojo</Text>
+                <Text style={styles.value}>{displayOrDash(eyeShape)}</Text>
+
+                <Text style={styles.label}>Curva</Text>
+                <Text style={styles.value}>{displayOrDash(curl)}</Text>
+
+                <Text style={styles.label}>Longitudes</Text>
+                <Text style={styles.value}>{displayOrDash(lengths)}</Text>
+
+                <Text style={styles.label}>Grosor</Text>
+                <Text style={styles.value}>{displayOrDash(thickness)}</Text>
+
+                <Text style={styles.label}>Diseño / Mapping</Text>
+                <Text style={styles.value}>{displayOrDash(design)}</Text>
+
+                <Text style={styles.label}>Adhesivo</Text>
+                <Text style={styles.value}>{displayOrDash(adhesive)}</Text>
+
+                <Text style={styles.label}>Notas técnicas</Text>
+                <Text style={styles.value}>
+                  {techNotes.trim() !== '' ? techNotes : '—'}
+                </Text>
+              </View>
+            )
           ) : (
             // ---- MODO EDICIÓN FICHA ----
-            <View>
-              <SelectField
-                label="Tipo de aplicación"
-                value={applicationType}
-                onChange={setApplicationType}
-                options={APPLICATION_OPTIONS}
-                placeholder="Clásica, Híbrida, Volumen..."
-              />
+            isNails ? (
+              <View>
+                <SelectField
+                  label="Técnica"
+                  value={nTechnique}
+                  onChange={setNTechnique}
+                  options={NAILS_TECHNIQUE_OPTIONS}
+                  placeholder="Gel, Acrílico, Polygel..."
+                />
 
-              <SelectField
-                label="Tipo de ojo"
-                value={eyeShape}
-                onChange={setEyeShape}
-                options={EYE_SHAPE_OPTIONS}
-                placeholder="Almendra, redondo, caído..."
-              />
+                <SelectField
+                  label="Forma"
+                  value={nShape}
+                  onChange={setNShape}
+                  options={NAILS_SHAPE_OPTIONS}
+                  placeholder="Almendra, Coffin..."
+                />
 
-              <SelectField
-                label="Curva"
-                value={curl}
-                onChange={setCurl}
-                options={CURL_OPTIONS}
-                placeholder="C, CC, D..."
-              />
+                <SelectField
+                  label="Largo"
+                  value={nLength}
+                  onChange={setNLength}
+                  options={NAILS_LENGTH_OPTIONS}
+                  placeholder="Cortas, Medias..."
+                />
 
-              <Text style={styles.label}>Longitudes</Text>
-              <TextInput
-                style={styles.input}
-                value={lengths}
-                onChangeText={setLengths}
-                placeholder="Ej. 9-10-11-12"
-              />
+                <Text style={styles.label}>Color</Text>
+                <TextInput
+                  style={styles.input}
+                  value={nColor}
+                  onChangeText={setNColor}
+                  placeholder="Ej. Nude / Rojo / Degradado..."
+                />
 
-              <SelectField
-                label="Grosor"
-                value={thickness}
-                onChange={setThickness}
-                options={THICKNESS_OPTIONS}
-                placeholder="0.07, 0.10, 0.15..."
-              />
+                <Text style={styles.label}>Diseño</Text>
+                <TextInput
+                  style={styles.input}
+                  value={nDesign}
+                  onChangeText={setNDesign}
+                  placeholder="Ej. French, glitter, líneas..."
+                />
 
-              <SelectField
-                label="Diseño / Mapping"
-                value={design}
-                onChange={setDesign}
-                options={DESIGN_OPTIONS}
-                placeholder="Natural, Doll eye, Fox..."
-              />
+                <SelectField
+                  label="Acabado"
+                  value={nFinish}
+                  onChange={setNFinish}
+                  options={NAILS_FINISH_OPTIONS}
+                  placeholder="Brillante, Mate..."
+                />
 
-              <SelectField
-                label="Adhesivo"
-                value={adhesive}
-                onChange={setAdhesive}
-                options={ADHESIVE_OPTIONS}
-                placeholder="Selecciona adhesivo"
-              />
+                <TouchableOpacity
+                  style={[styles.editChip, { marginTop: 12, alignSelf: 'flex-start' }]}
+                  onPress={() => setNRemoval(v => !v)}
+                >
+                  <Text style={styles.editChipText}>
+                    {nRemoval ? '✅ Incluyó retiro' : '⬜ Incluyó retiro'}
+                  </Text>
+                </TouchableOpacity>
 
-              {showCustomAdhesive && (
-                <>
-                  <Text style={styles.label}>Especifica el adhesivo</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={customAdhesive}
-                    onChangeText={setCustomAdhesive}
-                    placeholder="Marca, tiempo de secado, etc."
-                  />
-                </>
-              )}
+                <Text style={styles.label}>Notas técnicas</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  value={nNotes}
+                  onChangeText={setNNotes}
+                  placeholder="Productos usados, alergias, recomendaciones..."
+                  multiline
+                />
 
-              <Text style={styles.label}>Notas técnicas</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={techNotes}
-                onChangeText={setTechNotes}
-                placeholder="Retención, sensibilidades, recomendaciones..."
-                multiline
-              />
+                <TouchableOpacity style={styles.button} onPress={saveTechnicalSheet}>
+                  <Text style={styles.buttonText}>Guardar ficha técnica</Text>
+                </TouchableOpacity>
 
-               <Text style={styles.sectionTitle}>Mapping</Text>
+                <TouchableOpacity
+                  style={styles.buttonOutline}
+                  onPress={handleCancelTechnical}
+                >
+                  <Text style={styles.buttonOutlineText}>Cancelar edición</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View>
+                <SelectField
+                  label="Tipo de aplicación"
+                  value={applicationType}
+                  onChange={setApplicationType}
+                  options={APPLICATION_OPTIONS}
+                  placeholder="Clásica, Híbrida, Volumen..."
+                />
 
-              <Text style={styles.labelSmall}>Ojo izquierdo</Text>
-              <MappingCanvas
-                baseImage={require('../../assets/mapping-left.png')}
-                initialData={appointment.mappingLeft ?? null}
-                onChange={data =>
-                  updateAppointment(appointment.id, { mappingLeft: data })
-                }
-                strokeColor="#333333"
-                strokeWidth={2}
-              />
+                <SelectField
+                  label="Tipo de ojo"
+                  value={eyeShape}
+                  onChange={setEyeShape}
+                  options={EYE_SHAPE_OPTIONS}
+                  placeholder="Almendra, redondo, caído..."
+                />
 
-              <Text style={[styles.labelSmall, { marginTop: 12 }]}>
-                Ojo derecho
-              </Text>
-              <MappingCanvas
-                baseImage={require('../../assets/mapping-right.png')}
-                initialData={appointment.mappingRight ?? null}
-                onChange={data =>
-                  updateAppointment(appointment.id, { mappingRight: data })
-                }
-                strokeColor="#333333"
-                strokeWidth={2}
-              />
+                <SelectField
+                  label="Curva"
+                  value={curl}
+                  onChange={setCurl}
+                  options={CURL_OPTIONS}
+                  placeholder="C, CC, D..."
+                />
 
-              <TouchableOpacity style={styles.button} onPress={saveTechnicalSheet}>
-                <Text style={styles.buttonText}>Guardar ficha técnica</Text>
-              </TouchableOpacity>
+                <Text style={styles.label}>Longitudes</Text>
+                <TextInput
+                  style={styles.input}
+                  value={lengths}
+                  onChangeText={setLengths}
+                  placeholder="Ej. 9-10-11-12"
+                />
 
-              <TouchableOpacity
-                style={styles.buttonOutline}
-                onPress={handleCancelTechnical}
-              >
-                <Text style={styles.buttonOutlineText}>Cancelar edición</Text>
-              </TouchableOpacity>
-            </View>
+                <SelectField
+                  label="Grosor"
+                  value={thickness}
+                  onChange={setThickness}
+                  options={THICKNESS_OPTIONS}
+                  placeholder="0.07, 0.10, 0.15..."
+                />
+
+                <SelectField
+                  label="Diseño / Mapping"
+                  value={design}
+                  onChange={setDesign}
+                  options={DESIGN_OPTIONS}
+                  placeholder="Natural, Doll eye, Fox..."
+                />
+
+                <SelectField
+                  label="Adhesivo"
+                  value={adhesive}
+                  onChange={setAdhesive}
+                  options={ADHESIVE_OPTIONS}
+                  placeholder="Selecciona adhesivo"
+                />
+
+                {showCustomAdhesive && (
+                  <>
+                    <Text style={styles.label}>Especifica el adhesivo</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={customAdhesive}
+                      onChangeText={setCustomAdhesive}
+                      placeholder="Marca, tiempo de secado, etc."
+                    />
+                  </>
+                )}
+
+                <Text style={styles.label}>Notas técnicas</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  value={techNotes}
+                  onChangeText={setTechNotes}
+                  placeholder="Retención, sensibilidades, recomendaciones..."
+                  multiline
+                />
+
+                <Text style={styles.sectionTitle}>Mapping</Text>
+
+                <Text style={styles.labelSmall}>Ojo izquierdo</Text>
+                <MappingCanvas
+                  baseImage={require('../../assets/mapping-left.png')}
+                  initialData={appointment.mappingLeft ?? null}
+                  onChange={data =>
+                    updateAppointment(appointment.id, { mappingLeft: data })
+                  }
+                  strokeColor="#333333"
+                  strokeWidth={2}
+                />
+
+                <Text style={[styles.labelSmall, { marginTop: 12 }]}>
+                  Ojo derecho
+                </Text>
+                <MappingCanvas
+                  baseImage={require('../../assets/mapping-right.png')}
+                  initialData={appointment.mappingRight ?? null}
+                  onChange={data =>
+                    updateAppointment(appointment.id, { mappingRight: data })
+                  }
+                  strokeColor="#333333"
+                  strokeWidth={2}
+                />
+
+                <TouchableOpacity style={styles.button} onPress={saveTechnicalSheet}>
+                  <Text style={styles.buttonText}>Guardar ficha técnica</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.buttonOutline}
+                  onPress={handleCancelTechnical}
+                >
+                  <Text style={styles.buttonOutlineText}>Cancelar edición</Text>
+                </TouchableOpacity>
+              </View>
+            )
           )}
         </View>
 

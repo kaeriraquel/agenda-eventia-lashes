@@ -1,5 +1,5 @@
 // app/appointment/new.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,30 +12,43 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAppointments } from '../../context/AppointmentsContext';
-import { SelectField } from '../../components/SelectField';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
+import { SelectField } from '../../components/SelectField';
+import { useAppointments, ServiceModule } from '../../context/AppointmentsContext';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
+import { normalizePhone } from '../../lib/phone';
 import { useBrand } from '../../context/BrandContext';
+import { toLocalDateKey, parseDateKey } from '../../lib/dates';
 
-type ServiceModule = 'lashes' | 'nails';
+type ClientRow = {
+  id: string;
+  name: string;
+  phone: string | null;
+  phone_normalized: string | null;
+};
 
-const LASHES_SERVICE_OPTIONS = [
+const LASHES_OPTIONS = [
   'Extensiones clásicas 1x1',
   'Extensiones híbridas',
   'Extensiones volumen',
   'Extensiones mega volumen',
   'Lifting de pestañas',
+  'Laminado de ceja',
+  'Lifting + laminado de ceja',
   'Retoque de pestañas',
   'Retiro de extensiones',
   'Otro (especificar)',
 ];
 
-const NAILS_SERVICE_OPTIONS = [
-  'Gelish',
+const NAILS_OPTIONS = [
+  'Gel semipermanente',
   'Acrílico',
   'Polygel',
-  'Esculpidas',
-  'Retoque',
+  'Baño de acrílico',
+  'Tip / Escultural',
+  'Relleno',
   'Retiro',
   'Nail art',
   'Otro (especificar)',
@@ -43,25 +56,48 @@ const NAILS_SERVICE_OPTIONS = [
 
 export default function NewAppointmentScreen() {
   const router = useRouter();
-  const { addAppointment } = useAppointments();
+  const { addAppointment, appointments } = useAppointments();
+  const { user } = useAuth();
+  const isPro = !!user?.id;
+
   const { enabledServices } = useBrand();
 
-  // ✅ Si solo tiene 1 servicio activo, ese será el default
-  const defaultModule: ServiceModule = useMemo(() => {
-    if (enabledServices.includes('lashes') && !enabledServices.includes('nails')) return 'lashes';
-    if (enabledServices.includes('nails') && !enabledServices.includes('lashes')) return 'nails';
-    return 'lashes'; // si tiene ambos, default pestañas
-  }, [enabledServices]);
+  // ===== Módulo (lashes/nails) =====
+  const defaultModule: ServiceModule =
+    (enabledServices?.[0] as ServiceModule) ?? 'lashes';
 
   const [module, setModule] = useState<ServiceModule>(defaultModule);
 
-  const [clientName, setClientName] = useState('');
+  const hasMultipleModules = (enabledServices?.length ?? 0) > 1;
+
+  useEffect(() => {
+    // Si desactivan un módulo en Config, ajustamos
+    if (!enabledServices || enabledServices.length === 0) return;
+    if (!enabledServices.includes(module)) {
+      setModule(enabledServices[0] as ServiceModule);
+    }
+  }, [enabledServices, module]);
+
+  const SERVICE_OPTIONS = useMemo(() => {
+    return module === 'nails' ? NAILS_OPTIONS : LASHES_OPTIONS;
+  }, [module]);
+
+  // ===== Clienta: buscador + seleccion =====
+  const [clientQuery, setClientQuery] = useState('');
+  const [clientResults, setClientResults] = useState<ClientRow[]>([]);
+  const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
+  const [loadingClients, setLoadingClients] = useState(false);
+
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+
+  // ===== Form =====
   const [serviceOption, setServiceOption] = useState('');
   const [customService, setCustomService] = useState('');
   const [notes, setNotes] = useState('');
 
   const today = new Date();
-  const isoDate = today.toISOString().slice(0, 10);
+  const isoDate = toLocalDateKey(today);
 
   const [dateStr, setDateStr] = useState(isoDate);
   const [timeStr, setTimeStr] = useState('10:00');
@@ -69,47 +105,184 @@ export default function NewAppointmentScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  // ✅ Opciones según módulo
-  const serviceOptions = useMemo(() => {
-    const base = module === 'nails' ? NAILS_SERVICE_OPTIONS : LASHES_SERVICE_OPTIONS;
-    return base;
-  }, [module]);
-
-  // ✅ Si cambias módulo, resetea servicio para evitar mismatch
-  const handleChangeModule = (m: ServiceModule) => {
-    setModule(m);
+  // Limpia servicio cuando cambias módulo (para que no se quede uno inválido)
+  useEffect(() => {
     setServiceOption('');
     setCustomService('');
+  }, [module]);
+
+  // ===== Buscar clientas mientras escribe (debounce) =====
+  useEffect(() => {
+    const q = clientQuery.trim();
+
+    const t = setTimeout(async () => {
+      if (q.length < 2) {
+        setClientResults([]);
+        return;
+      }
+
+      // PRO: buscar en Supabase
+      if (isPro && user?.id) {
+        try {
+          setLoadingClients(true);
+
+          const qDigits = normalizePhone(q);
+          const orParts = [`name.ilike.%${q}%`];
+          if (qDigits) orParts.push(`phone_normalized.ilike.%${qDigits}%`);
+
+          const { data, error } = await supabase
+            .from('clients')
+            .select('id,name,phone,phone_normalized')
+            .eq('user_id', user.id)
+            .or(orParts.join(','))
+            .order('name', { ascending: true })
+            .limit(8);
+
+          if (error) throw error;
+          setClientResults((data ?? []) as ClientRow[]);
+        } catch (e) {
+          console.error(e);
+          setClientResults([]);
+        } finally {
+          setLoadingClients(false);
+        }
+        return;
+      }
+
+      // GRATIS: sugerencias desde citas locales
+      const lower = q.toLowerCase();
+      const map = new Map<string, ClientRow>();
+
+      for (const a of appointments) {
+        const name = (a.clientName || '').trim();
+        if (!name) continue;
+
+        const phoneN = normalizePhone(a.phone || '');
+        const qN = normalizePhone(q);
+
+        const hit =
+          name.toLowerCase().includes(lower) ||
+          (!!phoneN && !!qN && phoneN.includes(qN));
+
+        if (!hit) continue;
+
+        const key = phoneN ? `${name}::${phoneN}` : name;
+        if (!map.has(key)) {
+          map.set(key, {
+            id: key,
+            name,
+            phone: a.phone ?? null,
+            phone_normalized: phoneN,
+          });
+        }
+      }
+
+      setClientResults(Array.from(map.values()).slice(0, 8));
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [clientQuery, isPro, user?.id, appointments]);
+
+  const pickClient = (c: ClientRow) => {
+    setSelectedClient(c);
+    setClientQuery(c.name);
+    setNewClientName('');
+    setNewClientPhone(c.phone ?? '');
+    setClientResults([]);
   };
 
-  const handleSave = async () => {
-    const finalService =
-      serviceOption === 'Otro (especificar)' ? customService : serviceOption;
+  // ===== Crear/obtener clienta en PRO antes de crear cita =====
+  const ensureClientPro = async (): Promise<{
+    clientId: string | null;
+    name: string;
+    phone: string;
+  }> => {
+    const name = (selectedClient?.name || newClientName || clientQuery).trim();
+    const phone = (selectedClient?.phone || newClientPhone || '').trim();
 
-    if (!clientName.trim() || !finalService.trim() || !dateStr.trim() || !timeStr.trim()) {
-      Alert.alert('Campos incompletos', 'Llena clienta, servicio, fecha y hora.');
-      return;
+    if (!name) throw new Error('Pon el nombre de la clienta.');
+
+    // Ya seleccionó una existente
+    if (selectedClient?.id && isPro) {
+      return { clientId: selectedClient.id, name, phone };
     }
 
-    await addAppointment({
-      clientName: clientName.trim(),
-      service: finalService.trim(),
-      notes: notes.trim(),
-      date: dateStr.trim(),
-      time: timeStr.trim(),
-      module:'lashes', // ✅ se guarda el tipo
-    });
+    // No Pro => no hay tabla clients
+    if (!isPro || !user?.id) {
+      return { clientId: null, name, phone };
+    }
 
-    Alert.alert('Cita creada', 'La cita se agregó a tu agenda.');
-    router.replace('/(tabs)');
+    const phoneNorm = normalizePhone(phone);
+
+    // Con teléfono: upsert para evitar duplicados
+    if (phoneNorm) {
+      const { data, error } = await supabase
+        .from('clients')
+        .upsert(
+          {
+            user_id: user.id,
+            name,
+            phone,
+            phone_normalized: phoneNorm,
+          },
+          { onConflict: 'user_id,phone_normalized' }
+        )
+        .select('id,name,phone,phone_normalized')
+        .single();
+
+      if (error) throw error;
+
+      return { clientId: (data as any).id, name, phone };
+    }
+
+    // Sin teléfono: insert normal
+    const { data, error } = await supabase
+      .from('clients')
+      .insert({ user_id: user.id, name, phone: null, phone_normalized: null })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+    return { clientId: (data as any).id, name, phone };
+  };
+
+  const showCustomServiceInput = serviceOption === 'Otro (especificar)';
+
+  const handleSave = async () => {
+    try {
+      const finalService =
+        serviceOption === 'Otro (especificar)'
+          ? customService.trim()
+          : serviceOption;
+
+      if (!finalService || !dateStr || !timeStr) {
+        Alert.alert('Campos incompletos', 'Llena servicio, fecha y hora.');
+        return;
+      }
+
+      const { clientId, name, phone } = await ensureClientPro();
+
+      await addAppointment({
+        clientId,
+        clientName: name,
+        phone,
+        service: finalService,
+        notes,
+        date: dateStr,
+        time: timeStr,
+        module, // ✅ aquí ya se guarda lashes/nails
+      });
+
+      Alert.alert('Cita creada', 'La cita se agregó a tu agenda.');
+      router.replace('/(tabs)');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'No se pudo guardar la cita.');
+    }
   };
 
   const onDateSelected = (_: any, selectedDate?: Date) => {
     setShowDatePicker(false);
-    if (selectedDate) {
-      const formatted = selectedDate.toISOString().slice(0, 10);
-      setDateStr(formatted);
-    }
+    if (selectedDate) setDateStr(toLocalDateKey(selectedDate));
   };
 
   const onTimeSelected = (_: any, selectedTime?: Date) => {
@@ -121,62 +294,105 @@ export default function NewAppointmentScreen() {
     }
   };
 
-  const showCustomServiceInput = serviceOption === 'Otro (especificar)';
-
-  // ✅ Si solo hay un servicio habilitado, no mostramos selector
-  const showModuleSelector = enabledServices.includes('lashes') && enabledServices.includes('nails');
-
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title}>Nueva cita</Text>
 
-        {showModuleSelector ? (
-          <View style={styles.moduleCard}>
-            <Text style={styles.label}>Tipo de servicio *</Text>
-            <View style={styles.moduleRow}>
+        {/* ✅ MÓDULO */}
+        {hasMultipleModules ? (
+          <View style={styles.moduleRow}>
+            {enabledServices.includes('lashes') ? (
               <TouchableOpacity
-                style={[styles.moduleChip, module === 'lashes' && styles.moduleChipActive]}
-                onPress={() => handleChangeModule('lashes')}
+                style={[styles.moduleBtn, module === 'lashes' && styles.moduleBtnActive]}
+                onPress={() => setModule('lashes')}
               >
-                <Text style={[styles.moduleChipText, module === 'lashes' && styles.moduleChipTextActive]}>
+                <Text style={[styles.moduleBtnText, module === 'lashes' && styles.moduleBtnTextActive]}>
                   Pestañas
                 </Text>
               </TouchableOpacity>
+            ) : null}
 
+            {enabledServices.includes('nails') ? (
               <TouchableOpacity
-                style={[styles.moduleChip, module === 'nails' && styles.moduleChipActive]}
-                onPress={() => handleChangeModule('nails')}
+                style={[styles.moduleBtn, module === 'nails' && styles.moduleBtnActive]}
+                onPress={() => setModule('nails')}
               >
-                <Text style={[styles.moduleChipText, module === 'nails' && styles.moduleChipTextActive]}>
+                <Text style={[styles.moduleBtnText, module === 'nails' && styles.moduleBtnTextActive]}>
                   Uñas
                 </Text>
               </TouchableOpacity>
-            </View>
+            ) : null}
           </View>
         ) : null}
 
-        <Text style={styles.label}>Nombre de la clienta *</Text>
+        {/* ===== CLIENTA ===== */}
+        <Text style={styles.label}>Clienta *</Text>
         <TextInput
           style={styles.input}
-          value={clientName}
-          onChangeText={setClientName}
-          placeholder="Ej. Ana López"
+          value={clientQuery}
+          onChangeText={(t) => {
+            setClientQuery(t);
+            setSelectedClient(null);
+            setNewClientName(t);
+          }}
+          placeholder="Escribe para buscar… (Ana / 844…)"
         />
 
+        {loadingClients ? <Text style={styles.hint}>Buscando…</Text> : null}
+
+        {clientResults.length > 0 ? (
+          <View style={styles.suggestBox}>
+            {clientResults.map((item, idx) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[
+                  styles.suggestRow,
+                  idx !== clientResults.length - 1 && styles.suggestRowBorder,
+                ]}
+                onPress={() => pickClient(item)}
+              >
+                <Text style={styles.suggestName}>{item.name}</Text>
+                <Text style={styles.suggestPhone}>{item.phone ?? 'Sin teléfono'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {!selectedClient ? (
+          <>
+            <Text style={styles.label}>Teléfono (recomendado)</Text>
+            <TextInput
+              style={styles.input}
+              value={newClientPhone}
+              onChangeText={setNewClientPhone}
+              placeholder="Ej. 8441234567"
+              keyboardType="phone-pad"
+            />
+            <Text style={styles.hint}>
+              Si pones teléfono, la app reconocerá automáticamente a la clienta la próxima vez.
+            </Text>
+          </>
+        ) : null}
+
+        {/* ===== SERVICIO ===== */}
         <SelectField
           label="Servicio *"
           value={serviceOption}
           onChange={setServiceOption}
-          options={serviceOptions}
-          placeholder="Selecciona un servicio"
+          options={SERVICE_OPTIONS}
+          placeholder={module === 'nails' ? 'Selecciona un servicio de uñas' : 'Selecciona un servicio de pestañas'}
         />
 
-        {showCustomServiceInput && (
+        {showCustomServiceInput ? (
           <>
-            <Text style={styles.label}>Especifica el servicio</Text>
+            <Text style={styles.label}>Especifica el servicio *</Text>
             <TextInput
               style={styles.input}
               value={customService}
@@ -184,15 +400,16 @@ export default function NewAppointmentScreen() {
               placeholder="Describe el servicio"
             />
           </>
-        )}
+        ) : null}
 
+        {/* ===== FECHA ===== */}
         <Text style={styles.label}>Fecha *</Text>
         {Platform.OS === 'web' ? (
           <TextInput
             style={styles.input}
             value={dateStr}
             onChangeText={setDateStr}
-            placeholder="2025-11-25"
+            placeholder="2026-02-17"
           />
         ) : (
           <>
@@ -204,11 +421,12 @@ export default function NewAppointmentScreen() {
             </TouchableOpacity>
 
             {showDatePicker && (
-              <DateTimePicker mode="date" value={today} onChange={onDateSelected} />
+              <DateTimePicker mode="date" value={parseDateKey(dateStr)} onChange={onDateSelected} />
             )}
           </>
         )}
 
+        {/* ===== HORA ===== */}
         <Text style={styles.label}>Hora *</Text>
         {Platform.OS === 'web' ? (
           <TextInput
@@ -232,6 +450,7 @@ export default function NewAppointmentScreen() {
           </>
         )}
 
+        {/* ===== NOTAS ===== */}
         <Text style={styles.label}>Notas (opcional)</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
@@ -252,50 +471,9 @@ export default function NewAppointmentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    backgroundColor: '#FFF7FC',
-    flexGrow: 1,
-  },
-  moduleCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#FFD1E8',
-    marginBottom: 10,
-  },
-  moduleRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-  },
-  moduleChip: {
-    flex: 1,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#FFD1E8',
-    paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  moduleChipActive: {
-    backgroundColor: '#FF6FB5',
-    borderColor: '#FF6FB5',
-  },
-  moduleChipText: {
-    fontSize: 13,
-    color: '#FF6FB5',
-    fontWeight: '600',
-  },
-  moduleChipTextActive: {
-    color: '#FFFFFF',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginTop: 10,
-  },
+  container: { padding: 16, backgroundColor: '#FFF7FC', flexGrow: 1 },
+  title: { fontSize: 22, fontWeight: '700', marginBottom: 6 },
+  label: { fontSize: 14, fontWeight: '500', marginTop: 10 },
   input: {
     borderWidth: 1,
     borderColor: '#FFD1E8',
@@ -305,10 +483,36 @@ const styles = StyleSheet.create({
     marginTop: 4,
     backgroundColor: '#FFFFFF',
   },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
+  textArea: { height: 80, textAlignVertical: 'top' },
+  hint: { fontSize: 12, color: '#777', marginTop: 6 },
+
+  moduleRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  moduleBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#FFD1E8',
+    borderRadius: 999,
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: '#fff',
   },
+  moduleBtnActive: { backgroundColor: '#FF6FB5', borderColor: '#FF6FB5' },
+  moduleBtnText: { fontSize: 13, color: '#FF6FB5', fontWeight: '600' },
+  moduleBtnTextActive: { color: '#fff' },
+
+  suggestBox: {
+    borderWidth: 1,
+    borderColor: '#FFD1E8',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  suggestRow: { paddingVertical: 10, paddingHorizontal: 12 },
+  suggestRowBorder: { borderBottomWidth: 1, borderBottomColor: '#FFE1F0' },
+  suggestName: { fontSize: 14, fontWeight: '600', color: '#222' },
+  suggestPhone: { fontSize: 12, color: '#777', marginTop: 2 },
+
   selectorBtn: {
     borderWidth: 1,
     borderColor: '#FFD1E8',
@@ -317,9 +521,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginTop: 4,
   },
-  selectorText: {
-    fontSize: 15,
-  },
+  selectorText: { fontSize: 15 },
+
   saveButton: {
     backgroundColor: '#FF6FB5',
     paddingVertical: 14,
@@ -327,9 +530,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 24,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
