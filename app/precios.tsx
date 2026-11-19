@@ -10,9 +10,10 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { usePrices } from '../../context/PricesContext';
-import { SelectField } from '../../components/SelectField';
-import { useBrand } from '../../context/BrandContext';
+import { usePrices } from '../context/PricesContext';
+import { SelectField } from '../components/SelectField';
+import { useBrand } from '../context/BrandContext';
+import { Colors } from '../constants/theme';
 
 const CATEGORY_OPTIONS = ['servicio', 'producto'] as const;
 const MODULE_OPTIONS = ['lashes', 'nails'] as const;
@@ -205,7 +206,7 @@ export default function PreciosScreen() {
           ) : (
             <View style={{ marginTop: 8 }}>
               <Text style={styles.label}>Módulo</Text>
-              <Text style={{ marginTop: 4, color: '#555' }}>{moduleLabelSingle}</Text>
+              <Text style={{ marginTop: 4, color: Colors.textMuted }}>{moduleLabelSingle}</Text>
             </View>
           )
         ) : null}
@@ -286,9 +287,9 @@ export default function PreciosScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, backgroundColor: '#FFF7FC', flexGrow: 1 },
-  title: { fontSize: 22, fontWeight: '600', marginBottom: 4 },
-  subtitle: { fontSize: 13, color: '#777', marginBottom: 16 },
+  container: { padding: 20, paddingTop: 4, backgroundColor: Colors.screenBackground, flexGrow: 1 },
+  title: { fontSize: 28, fontWeight: '700', marginBottom: 4, color: Colors.text, letterSpacing: -0.5},
+  subtitle: { fontSize: 13, color: Colors.textMuted, marginBottom: 16 },
 
   formCard: {
     backgroundColor: '#FFFFFF',
@@ -303,11 +304,11 @@ const styles = StyleSheet.create({
   },
   formTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
 
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8, color: '#444' },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 8, color: Colors.textSecondary },
   input: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
+    borderColor: Colors.border,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginTop: 4,
@@ -315,7 +316,7 @@ const styles = StyleSheet.create({
   },
 
   addButton: {
-    backgroundColor: '#FF6FB5',
+    backgroundColor: Colors.primary,
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: 'center',
@@ -329,12 +330,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#FFB3CF',
+    borderColor: Colors.primaryLight,
   },
-  cancelButtonText: { color: '#FF6FB5', fontSize: 13, fontWeight: '500' },
+  cancelButtonText: { color: Colors.primary, fontSize: 13, fontWeight: '500' },
 
   sectionTitle: { fontSize: 18, fontWeight: '600', marginTop: 8, marginBottom: 4 },
-  emptyText: { color: '#777', marginBottom: 12 },
+  emptyText: { color: Colors.textMuted, marginBottom: 12 },
 
   itemRow: {
     flexDirection: 'row',
@@ -342,10 +343,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 0.5,
-    borderBottomColor: '#FFD1E8',
+    borderBottomColor: Colors.border,
   },
   itemName: { fontSize: 14, fontWeight: '500' },
-  itemPrice: { fontSize: 13, color: '#555', marginTop: 2 },
+  itemPrice: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
 
   itemButtons: { flexDirection: 'row', gap: 8 },
 
@@ -354,16 +355,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#FFB3CF',
+    borderColor: Colors.primaryLight,
   },
-  editButtonText: { fontSize: 12, color: '#FF6FB5' },
+  editButtonText: { fontSize: 12, color: Colors.primary },
 
   deleteButton: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#FF9BAE',
+    borderColor: Colors.dangerSoft,
   },
-  deleteButtonText: { fontSize: 12, color: '#FF3B6B' },
+  deleteButtonText: { fontSize: 12, color: Colors.danger },
 });

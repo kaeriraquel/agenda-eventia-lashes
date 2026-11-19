@@ -11,7 +11,8 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { SelectField } from '../../components/SelectField';
@@ -20,7 +21,10 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { normalizePhone } from '../../lib/phone';
 import { useBrand } from '../../context/BrandContext';
-import { toLocalDateKey, parseDateKey } from '../../lib/dates';
+import { toLocalDateKey, parseDateKey, formatLongDate, formatTime12 } from '../../lib/dates';
+import { usePrices } from '../../context/PricesContext';
+import { Colors, Radii, Shadow } from '../../constants/theme';
+import { Button, money } from '../../components/ui';
 
 type ClientRow = {
   id: string;
@@ -56,7 +60,13 @@ const NAILS_OPTIONS = [
 
 export default function NewAppointmentScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    prefillDate?: string;
+    prefillName?: string;
+    prefillPhone?: string;
+  }>();
   const { addAppointment, appointments } = useAppointments();
+  const { items: priceItems } = usePrices();
   const { user } = useAuth();
   const isPro = !!user?.id;
 
@@ -78,32 +88,55 @@ export default function NewAppointmentScreen() {
     }
   }, [enabledServices, module]);
 
+  // Servicios de TU lista de precios (si tienes), si no, los de ejemplo
+  const servicesFromPrices = useMemo(
+    () =>
+      priceItems.filter(
+        i => i.category === 'servicio' && (i.module === module || i.module == null)
+      ),
+    [priceItems, module]
+  );
   const SERVICE_OPTIONS = useMemo(() => {
+    if (servicesFromPrices.length > 0) {
+      return [...Array.from(new Set(servicesFromPrices.map(i => i.name))), 'Otro (especificar)'];
+    }
     return module === 'nails' ? NAILS_OPTIONS : LASHES_OPTIONS;
-  }, [module]);
+  }, [module, servicesFromPrices]);
 
   // ===== Clienta: buscador + seleccion =====
-  const [clientQuery, setClientQuery] = useState('');
+  const [clientQuery, setClientQuery] = useState(String(params.prefillName ?? ''));
   const [clientResults, setClientResults] = useState<ClientRow[]>([]);
   const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
   const [loadingClients, setLoadingClients] = useState(false);
 
-  const [newClientName, setNewClientName] = useState('');
-  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientName, setNewClientName] = useState(String(params.prefillName ?? ''));
+  const [newClientPhone, setNewClientPhone] = useState(String(params.prefillPhone ?? ''));
 
   // ===== Form =====
   const [serviceOption, setServiceOption] = useState('');
   const [customService, setCustomService] = useState('');
   const [notes, setNotes] = useState('');
+  const [priceStr, setPriceStr] = useState('');
+  const [depositStr, setDepositStr] = useState('');
 
   const today = new Date();
   const isoDate = toLocalDateKey(today);
 
-  const [dateStr, setDateStr] = useState(isoDate);
+  const initialDate =
+    typeof params.prefillDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(params.prefillDate)
+      ? params.prefillDate
+      : isoDate;
+  const [dateStr, setDateStr] = useState(initialDate);
   const [timeStr, setTimeStr] = useState('10:00');
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+
+  // Al elegir servicio, sugiere su precio de tu lista
+  useEffect(() => {
+    const found = servicesFromPrices.find(i => i.name === serviceOption);
+    if (found) setPriceStr(String(found.price));
+  }, [serviceOption, servicesFromPrices]);
 
   // Limpia servicio cuando cambias módulo (para que no se quede uno inválido)
   useEffect(() => {
@@ -255,9 +288,48 @@ export default function NewAppointmentScreen() {
           ? customService.trim()
           : serviceOption;
 
+      if (!(selectedClient?.name || newClientName || clientQuery).trim()) {
+        Alert.alert('Falta la clienta', 'Escribe el nombre de la clienta.');
+        return;
+      }
       if (!finalService || !dateStr || !timeStr) {
         Alert.alert('Campos incompletos', 'Llena servicio, fecha y hora.');
         return;
+      }
+
+      const toNum = (t: string) => {
+        const c = t.replace(/[$,\s]/g, '');
+        if (!c) return null;
+        const n = Number(c);
+        return isNaN(n) ? NaN : n;
+      };
+      const price = toNum(priceStr);
+      const deposit = toNum(depositStr);
+      if (Number.isNaN(price) || Number.isNaN(deposit)) {
+        Alert.alert('Revisa los montos', 'Escribe solo números en precio y anticipo.');
+        return;
+      }
+      if (deposit != null && price != null && deposit > price) {
+        Alert.alert('Anticipo mayor al precio', 'El anticipo no puede ser mayor que el precio.');
+        return;
+      }
+
+      // ¿Ya hay otra cita a esa misma hora?
+      const clash = appointments.find(
+        a => a.date === dateStr && a.time === timeStr && a.status === 'pendiente'
+      );
+      if (clash) {
+        const goOn = await new Promise<boolean>(resolve =>
+          Alert.alert(
+            'Horario ocupado',
+            `Ya tienes a ${clash.clientName} a las ${formatTime12(timeStr)}. ¿Agendar de todos modos?`,
+            [
+              { text: 'Cambiar hora', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Agendar igual', onPress: () => resolve(true) },
+            ]
+          )
+        );
+        if (!goOn) return;
       }
 
       const { clientId, name, phone } = await ensureClientPro();
@@ -271,10 +343,13 @@ export default function NewAppointmentScreen() {
         date: dateStr,
         time: timeStr,
         module, // ✅ aquí ya se guarda lashes/nails
+        price,
+        deposit,
       });
 
-      Alert.alert('Cita creada', 'La cita se agregó a tu agenda.');
-      router.replace('/(tabs)');
+      Alert.alert('Cita creada', `${name} · ${formatLongDate(dateStr)} a las ${formatTime12(timeStr)}`);
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)');
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'No se pudo guardar la cita.');
     }
@@ -402,6 +477,37 @@ export default function NewAppointmentScreen() {
           </>
         ) : null}
 
+        {/* ===== PRECIO Y ANTICIPO ===== */}
+        <View style={styles.twoCols}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Precio</Text>
+            <TextInput
+              style={styles.input}
+              value={priceStr}
+              onChangeText={setPriceStr}
+              placeholder="$0"
+              placeholderTextColor={Colors.textSubtle}
+              keyboardType="decimal-pad"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Anticipo recibido</Text>
+            <TextInput
+              style={styles.input}
+              value={depositStr}
+              onChangeText={setDepositStr}
+              placeholder="$0"
+              placeholderTextColor={Colors.textSubtle}
+              keyboardType="decimal-pad"
+            />
+          </View>
+        </View>
+        {priceStr && depositStr ? (
+          <Text style={styles.hint}>
+            Le faltará pagar {money(Math.max(0, Number(priceStr) - Number(depositStr) || 0))} el día de la cita.
+          </Text>
+        ) : null}
+
         {/* ===== FECHA ===== */}
         <Text style={styles.label}>Fecha *</Text>
         {Platform.OS === 'web' ? (
@@ -417,7 +523,10 @@ export default function NewAppointmentScreen() {
               style={styles.selectorBtn}
               onPress={() => setShowDatePicker(true)}
             >
-              <Text style={styles.selectorText}>{dateStr}</Text>
+              <Ionicons name="calendar-outline" size={18} color={Colors.primary} />
+              <Text style={styles.selectorText}>
+                {formatLongDate(dateStr).replace(/^./, c => c.toUpperCase())}
+              </Text>
             </TouchableOpacity>
 
             {showDatePicker && (
@@ -441,11 +550,21 @@ export default function NewAppointmentScreen() {
               style={styles.selectorBtn}
               onPress={() => setShowTimePicker(true)}
             >
-              <Text style={styles.selectorText}>{timeStr}</Text>
+              <Ionicons name="time-outline" size={18} color={Colors.primary} />
+              <Text style={styles.selectorText}>{formatTime12(timeStr)}</Text>
             </TouchableOpacity>
 
             {showTimePicker && (
-              <DateTimePicker mode="time" value={today} onChange={onTimeSelected} />
+              <DateTimePicker
+                mode="time"
+                value={(() => {
+                  const [h, m] = timeStr.split(':').map(Number);
+                  const d = new Date();
+                  d.setHours(h || 10, m || 0, 0, 0);
+                  return d;
+                })()}
+                onChange={onTimeSelected}
+              />
             )}
           </>
         )}
@@ -460,9 +579,7 @@ export default function NewAppointmentScreen() {
           multiline
         />
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Guardar cita</Text>
-        </TouchableOpacity>
+        <Button title="Guardar cita" icon="checkmark" onPress={handleSave} style={{ marginTop: 24 }} />
 
         <View style={{ height: 50 }} />
       </ScrollView>
@@ -471,64 +588,65 @@ export default function NewAppointmentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, backgroundColor: '#FFF7FC', flexGrow: 1 },
-  title: { fontSize: 22, fontWeight: '700', marginBottom: 6 },
-  label: { fontSize: 14, fontWeight: '500', marginTop: 10 },
+  container: { padding: 20, paddingTop: 4, backgroundColor: Colors.screenBackground, flexGrow: 1 },
+  title: { fontSize: 28, fontWeight: '700', color: Colors.text, letterSpacing: -0.5, marginBottom: 12 },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginTop: 16,
+    marginBottom: 6,
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginTop: 4,
-    backgroundColor: '#FFFFFF',
+    borderColor: Colors.border,
+    borderRadius: Radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: Colors.cardBackground,
+    fontSize: 15,
+    color: Colors.text,
   },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  hint: { fontSize: 12, color: '#777', marginTop: 6 },
+  textArea: { height: 90, textAlignVertical: 'top' },
+  hint: { fontSize: 12, color: Colors.textMuted, marginTop: 6 },
+  twoCols: { flexDirection: 'row', gap: 12 },
 
-  moduleRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  moduleBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 999,
-    paddingVertical: 8,
-    alignItems: 'center',
-    backgroundColor: '#fff',
+  moduleRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surfaceMuted,
+    borderRadius: Radii.pill,
+    padding: 3,
+    marginBottom: 4,
   },
-  moduleBtnActive: { backgroundColor: '#FF6FB5', borderColor: '#FF6FB5' },
-  moduleBtnText: { fontSize: 13, color: '#FF6FB5', fontWeight: '600' },
-  moduleBtnTextActive: { color: '#fff' },
+  moduleBtn: { flex: 1, borderRadius: Radii.pill, paddingVertical: 9, alignItems: 'center' },
+  moduleBtnActive: { backgroundColor: Colors.cardBackground, ...Shadow.card },
+  moduleBtnText: { fontSize: 14, color: Colors.textMuted, fontWeight: '600' },
+  moduleBtnTextActive: { color: Colors.primary },
 
   suggestBox: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderColor: Colors.borderSoft,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.cardBackground,
     marginTop: 6,
     overflow: 'hidden',
+    ...Shadow.card,
   },
-  suggestRow: { paddingVertical: 10, paddingHorizontal: 12 },
-  suggestRowBorder: { borderBottomWidth: 1, borderBottomColor: '#FFE1F0' },
-  suggestName: { fontSize: 14, fontWeight: '600', color: '#222' },
-  suggestPhone: { fontSize: 12, color: '#777', marginTop: 2 },
+  suggestRow: { paddingVertical: 12, paddingHorizontal: 14 },
+  suggestRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.borderSoft },
+  suggestName: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  suggestPhone: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
 
   selectorBtn: {
-    borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
-    padding: 12,
-    backgroundColor: '#fff',
-    marginTop: 4,
-  },
-  selectorText: { fontSize: 15 },
-
-  saveButton: {
-    backgroundColor: '#FF6FB5',
-    paddingVertical: 14,
-    borderRadius: 999,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 24,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    backgroundColor: Colors.cardBackground,
   },
-  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  selectorText: { fontSize: 15, color: Colors.text, fontWeight: '500' },
 });

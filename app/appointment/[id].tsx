@@ -18,6 +18,13 @@ import { router, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAppointments } from '../../context/AppointmentsContext';
 import type { AppointmentStatus } from '../../context/AppointmentsContext';
 import { SelectField } from '../../components/SelectField';
+import { PaymentCard } from '../../components/PaymentCard';
+import { Avatar, Button, Card, Chip, StatusBadge, Pill, money } from '../../components/ui';
+import { Colors, Radii, Shadow, StatusColors } from '../../constants/theme';
+import { usePrices } from '../../context/PricesContext';
+import { useBrand } from '../../context/BrandContext';
+import { fillTemplate, openWhatsApp } from '../../lib/whatsapp';
+import { formatLongDate, formatTime12 } from '../../lib/dates';
 
 const APPLICATION_OPTIONS = ['Clásica', 'Híbrida', 'Volumen', 'Mega volumen'];
 const EYE_SHAPE_OPTIONS = ['Almendra', 'Redondo', 'Caído', 'Encapsulado', 'Profundo'];
@@ -37,7 +44,7 @@ const NAILS_SHAPE_OPTIONS = ['Almendra', 'Cuadrada', 'Coffin', 'Stiletto', 'Redo
 const NAILS_LENGTH_OPTIONS = ['Cortas', 'Medias', 'Largas', 'Extra largas'];
 const NAILS_FINISH_OPTIONS = ['Brillante', 'Mate', 'Glitter', 'Chrome', 'Otro'];
 
-const SERVICE_OPTIONS = [
+const DEFAULT_SERVICE_OPTIONS = [
   'Extensiones clásicas 1x1',
   'Extensiones híbridas',
   'Extensiones volumen',
@@ -55,6 +62,18 @@ export default function AppointmentDetailScreen() {
   const { appointments, updateAppointment, deleteAppointment } = useAppointments();
 
   const appointment = appointments.find(a => a.id === id);
+  const { items: priceItems } = usePrices();
+  const { brandName, reminderTemplate } = useBrand();
+
+  // Servicios de tu lista de precios (del mismo tipo: pestañas/uñas) + "Otro"
+  const SERVICE_OPTIONS = React.useMemo(() => {
+    const mod = appointment?.module ?? 'lashes';
+    const names = priceItems
+      .filter(i => i.category === 'servicio' && (i.module === mod || i.module == null))
+      .map(i => i.name);
+    const list = names.length > 0 ? names : DEFAULT_SERVICE_OPTIONS.slice(0, -1);
+    return [...Array.from(new Set(list)), 'Otro (especificar)'];
+  }, [priceItems, appointment?.module]);
 
   // --- MODO EDICIÓN ---
   const [isEditingGeneral, setIsEditingGeneral] = useState(false);
@@ -157,8 +176,13 @@ export default function AppointmentDetailScreen() {
     setCustomAdhesive('');
   };
 
+  // Sincroniza los campos con la cita guardada.
+  // OJO: mientras se edita una sección NO se sobreescribe, porque el mapping guarda
+  // cada trazo al momento y eso actualiza la cita (antes borraba lo escrito en la ficha).
   useEffect(() => {
     if (!appointment) return;
+    if (!isEditingTechnical) resetTechnicalFromAppointment();
+    if (isEditingGeneral) return;
 
     // Datos generales
     setClientName(appointment.clientName);
@@ -183,13 +207,8 @@ export default function AppointmentDetailScreen() {
       setCustomService(appointment.service);
     }
 
-    // Mantén esto para sincronizar ficha técnica con lo guardado
-    resetTechnicalFromAppointment();
-
-    // ❌ NO hagas esto aquí, porque te saca del modo edición al dibujar
-    //setIsEditingGeneral(false);
-    //setIsEditingTechnical(false);
-  }, [appointment]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointment, isEditingGeneral, isEditingTechnical]);
 
   if (!appointment) {
     return (
@@ -202,7 +221,7 @@ export default function AppointmentDetailScreen() {
   const showCustomService = serviceOption === 'Otro (especificar)';
   const showCustomAdhesive = adhesive === 'Otro';
 
-  const handleSaveGeneral = () => {
+  const handleSaveGeneral = async () => {
     const finalService =
       serviceOption === 'Otro (especificar)' ? customService : serviceOption;
 
@@ -221,7 +240,7 @@ export default function AppointmentDetailScreen() {
       priceNumber = parsed;
     }
 
-    updateAppointment(appointment.id, {
+    const ok = await updateAppointment(appointment.id, {
       clientName: clientName.trim(),
       phone: phone.trim(),
       service: finalService.trim(),
@@ -231,6 +250,10 @@ export default function AppointmentDetailScreen() {
       price: priceNumber,
     });
 
+    if (!ok) {
+      Alert.alert('No se guardó', 'Revisa tu conexión e intenta de nuevo.');
+      return;
+    }
     Alert.alert('Cita actualizada', 'Los datos de la cita se guardaron.');
     setIsEditingGeneral(false);
   };
@@ -278,9 +301,9 @@ export default function AppointmentDetailScreen() {
   };
 
 
-  const saveTechnicalSheet = () => {
+  const saveTechnicalSheet = async () => {
     if ((appointment.module ?? 'lashes') === 'nails') {
-      updateAppointment(appointment.id, {
+      const ok = await updateAppointment(appointment.id, {
         technicalSheet: {
           kind: 'nails',
           technique: nTechnique,
@@ -294,6 +317,10 @@ export default function AppointmentDetailScreen() {
         },
       });
 
+      if (!ok) {
+        Alert.alert('No se guardó', 'Revisa tu conexión e intenta de nuevo.');
+        return;
+      }
       Alert.alert('Ficha técnica', 'Ficha de uñas guardada.');
       setIsEditingTechnical(false);
       return;
@@ -307,7 +334,7 @@ export default function AppointmentDetailScreen() {
         ? adhesive
         : customAdhesive || adhesive;
 
-    updateAppointment(appointment.id, {
+    const ok = await updateAppointment(appointment.id, {
       technicalSheet: {
         kind: 'lashes',
         applicationType,
@@ -321,6 +348,10 @@ export default function AppointmentDetailScreen() {
       },
     });
 
+    if (!ok) {
+      Alert.alert('No se guardó', 'Revisa tu conexión e intenta de nuevo.');
+      return;
+    }
     Alert.alert('Ficha técnica', 'Ficha de pestañas guardada.');
     setIsEditingTechnical(false);
   };
@@ -333,7 +364,7 @@ export default function AppointmentDetailScreen() {
   const changeStatus = (newStatus: AppointmentStatus) => {
     Alert.alert(
       'Cambiar estado',
-      `¿Seguro que quieres marcar esta cita como "${newStatus}"?`,
+      `¿Marcar esta cita como "${StatusColors[newStatus]?.label ?? newStatus}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -341,7 +372,7 @@ export default function AppointmentDetailScreen() {
           style: 'destructive',
           onPress: () => {
             updateAppointment(appointment.id, { status: newStatus });
-            Alert.alert('Estado actualizado', `La cita ahora está: ${newStatus}.`);
+            // (sin alerta extra: el cambio se ve en la etiqueta)
           },
         },
       ]
@@ -361,13 +392,44 @@ export default function AppointmentDetailScreen() {
       Alert.alert('Sin teléfono', 'Esta cita no tiene número de teléfono guardado.');
       return;
     }
-    const clean = phone.replace(/\D/g, '');
-    const url = `https://wa.me/${clean}`;
-    Linking.openURL(url);
+    openWhatsApp(phone, '');
+  };
+
+  const handleReminder = () => {
+    if (!appointment) return;
+    const text = fillTemplate(reminderTemplate, {
+      nombre: appointment.clientName,
+      fecha: appointment.date,
+      hora: appointment.time,
+      servicio: appointment.service,
+      negocio: brandName,
+    });
+    openWhatsApp(appointment.phone, text);
+  };
+
+  const goToClient = () => {
+    if (!appointment) return;
+    const name = (appointment.clientName ?? '').trim();
+    const ph = (appointment.phone ?? '').trim();
+    router.push({
+      pathname: '/client/detail',
+      params: { name, phone: ph, clientKey: ph ? `${name}::${ph}` : name },
+    });
   };
 
 
   // Helpers para mostrar valores en modo lectura
+  // ¿El mapping guardado tiene al menos un trazo?
+  const hasStrokes = (data?: string | null) => {
+    if (!data) return false;
+    try {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) && parsed.length > 0;
+    } catch {
+      return false;
+    }
+  };
+
   const displayOrDash = (v?: string | null) =>
     v && v.trim() !== '' ? v : '—';
 
@@ -385,15 +447,6 @@ export default function AppointmentDetailScreen() {
     return '—';
   };
 
-  // Badge de estado
-  const statusColors: Record<AppointmentStatus, { bg: string; text: string }> = {
-    realizada: { bg: '#E6F9E6', text: '#2C8A2C' },
-    pendiente: { bg: '#FFF3E0', text: '#E69100' },
-    cancelada: { bg: '#FFE5E5', text: '#D12C2C' },
-    no_asistio: { bg: '#EFE5FF', text: '#6A42C8' },
-  };
-
-  const statusStyle = statusColors[appointment.status];
 
   return (
     <KeyboardAvoidingView
@@ -402,44 +455,50 @@ export default function AppointmentDetailScreen() {
     >
       <ScrollView contentContainerStyle={styles.container}>
         {/* ENCABEZADO */}
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>{appointment.clientName}</Text>
-            <Text style={styles.subtitleSmall}>
-              {appointment.date} · {appointment.time}
-            </Text>
+        <Card style={styles.hero}>
+          <View style={styles.heroTop}>
+            <Avatar name={appointment.clientName} size={52} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title} numberOfLines={1}>
+                {appointment.clientName}
+              </Text>
+              <Text style={styles.heroService} numberOfLines={1}>
+                {appointment.service}
+              </Text>
+            </View>
+            <StatusBadge status={appointment.status} />
           </View>
 
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: statusStyle.bg },
-            ]}
-          >
-            <Text style={[styles.statusBadgeText, { color: statusStyle.text }]}>
-              {appointment.status}
-            </Text>
+          <View style={styles.heroInfo}>
+            <View style={styles.heroInfoItem}>
+              <Text style={styles.heroInfoLabel}>Fecha</Text>
+              <Text style={styles.heroInfoValue}>
+                {formatLongDate(appointment.date).replace(/^./, c => c.toUpperCase())}
+              </Text>
+            </View>
+            <View style={styles.heroInfoItem}>
+              <Text style={styles.heroInfoLabel}>Hora</Text>
+              <Text style={styles.heroInfoValue}>{formatTime12(appointment.time)}</Text>
+            </View>
+            <View style={styles.heroInfoItem}>
+              <Text style={styles.heroInfoLabel}>Precio</Text>
+              <Text style={styles.heroInfoValue}>
+                {appointment.price != null ? money(appointment.price) : '—'}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          {appointment.clientId ? (
-            <TouchableOpacity
-              style={[styles.editChip, { borderColor: '#BDEBFF' }]}
-              onPress={() => router.push({ pathname: '/client/[id]', params: { id: appointment.clientId } })}
-            >
-              <Text style={[styles.editChipText, { color: '#1A7FA8' }]}>Ver clienta</Text>
-            </TouchableOpacity>
+          <View style={styles.heroActions}>
+            <Button title="Recordar" icon="logo-whatsapp" variant="whatsapp" small onPress={handleReminder} style={{ flex: 1 }} />
+            <Button title="Llamar" icon="call-outline" variant="secondary" small onPress={handleCall} style={{ flex: 1 }} />
+            <Button title="Clienta" icon="person-outline" variant="secondary" small onPress={goToClient} style={{ flex: 1 }} />
+          </View>
+          {appointment.module === 'nails' ? (
+            <View style={{ marginTop: 10 }}>
+              <Pill label="Uñas" bg={Colors.surfaceMuted} color={Colors.textSecondary} icon="hand-left-outline" />
+            </View>
           ) : null}
-
-          <TouchableOpacity
-            style={[styles.editChip, { borderColor: '#FFD0D0' }]}
-            onPress={handleDelete}
-          >
-            <Text style={[styles.editChipText, { color: '#D12C2C' }]}>Eliminar</Text>
-          </TouchableOpacity>
-        </View>
-
+        </Card>
 
         {/* DATOS GENERALES */}
         <View style={styles.sectionCard}>
@@ -570,39 +629,25 @@ export default function AppointmentDetailScreen() {
         </View>
 
         {/* CAMBIAR ESTADO */}
-        <Text style={styles.sectionTitle}>Cambiar estado</Text>
+        <Card style={{ marginTop: 12 }}>
+          <Text style={styles.sectionTitle}>Estado de la cita</Text>
+          <View style={styles.statusChips}>
+            {(['pendiente', 'realizada', 'cancelada', 'no_asistio'] as AppointmentStatus[]).map(st => (
+              <Chip
+                key={st}
+                label={StatusColors[st].label}
+                active={appointment.status === st}
+                onPress={() => appointment.status !== st && changeStatus(st)}
+              />
+            ))}
+          </View>
+        </Card>
 
-        <View style={styles.statusButtonsRow}>
-          <TouchableOpacity
-            style={[styles.statusButton, styles.done]}
-            onPress={() => changeStatus('realizada')}
-          >
-            <Text style={styles.statusButtonText}>Realizada</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statusButton, styles.pending]}
-            onPress={() => changeStatus('pendiente')}
-          >
-            <Text style={styles.statusButtonText}>Pendiente</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statusButton, styles.cancelled]}
-            onPress={() => changeStatus('cancelada')}
-          >
-            <Text style={styles.statusButtonText}>Cancelada</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.statusButtonsRow}>
-          <TouchableOpacity
-            style={[styles.statusButton, styles.noShow]}
-            onPress={() => changeStatus('no_asistio')}
-          >
-            <Text style={styles.statusButtonText}>No asistió</Text>
-          </TouchableOpacity>
-        </View>
+        {/* PAGO */}
+        <PaymentCard
+          appointment={appointment}
+          onSave={updates => updateAppointment(appointment.id, updates)}
+        />
 
         {/* FICHA TÉCNICA (LECTURA + BOTÓN EDITAR) */}
         <View style={styles.sectionDivider} />
@@ -675,6 +720,30 @@ export default function AppointmentDetailScreen() {
                 <Text style={styles.value}>
                   {techNotes.trim() !== '' ? techNotes : '—'}
                 </Text>
+
+                <Text style={styles.label}>Mapping</Text>
+                {hasStrokes(appointment.mappingLeft) || hasStrokes(appointment.mappingRight) ? (
+                  <>
+                    <Text style={styles.labelSmall}>Ojo izquierdo</Text>
+                    <MappingCanvas
+                      baseImage={require('../../assets/mapping-left.png')}
+                      initialData={appointment.mappingLeft ?? null}
+                      readOnly
+                      strokeColor="#333333"
+                      strokeWidth={2}
+                    />
+                    <Text style={[styles.labelSmall, { marginTop: 12 }]}>Ojo derecho</Text>
+                    <MappingCanvas
+                      baseImage={require('../../assets/mapping-right.png')}
+                      initialData={appointment.mappingRight ?? null}
+                      readOnly
+                      strokeColor="#333333"
+                      strokeWidth={2}
+                    />
+                  </>
+                ) : (
+                  <Text style={styles.value}>—</Text>
+                )}
               </View>
             )
           ) : (
@@ -878,7 +947,15 @@ export default function AppointmentDetailScreen() {
           )}
         </View>
 
-        <View style={{ height: 32 }} />
+        <Button
+          title="Eliminar cita"
+          icon="trash-outline"
+          variant="danger"
+          onPress={handleDelete}
+          style={{ marginTop: 20 }}
+        />
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -886,165 +963,97 @@ export default function AppointmentDetailScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    backgroundColor: '#FFF7FC',
+    padding: 20,
+    paddingTop: 4,
+    backgroundColor: Colors.screenBackground,
     flexGrow: 1,
   },
-  errorText: {
-    marginTop: 20,
-    textAlign: 'center',
-    color: 'red',
-  },
-  headerRow: {
+  errorText: { marginTop: 20, textAlign: 'center', color: Colors.danger },
+
+  // Encabezado
+  hero: { marginBottom: 12 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  title: { fontSize: 20, fontWeight: '700', color: Colors.text, letterSpacing: -0.3 },
+  heroService: { fontSize: 14, color: Colors.textMuted, marginTop: 2 },
+  heroInfo: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+    marginTop: 16,
+    backgroundColor: Colors.surfaceMuted,
+    borderRadius: Radii.md,
+    padding: 12,
     gap: 8,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
-  },
-  subtitleSmall: {
-    fontSize: 12,
-    color: '#777',
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
+  heroInfoItem: { flex: 1 },
+  heroInfoLabel: { fontSize: 11, color: Colors.textSubtle, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  heroInfoValue: { fontSize: 14, color: Colors.text, fontWeight: '600', marginTop: 2 },
+  heroActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  subtitleSmall: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+
+  statusChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+
   sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 3,
-    elevation: 1,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: Radii.card,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    ...Shadow.card,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  sectionSubtitle: {
-    fontSize: 13,
-    color: '#777',
-    marginBottom: 8,
-  },
+  sectionTitle: { fontSize: 17, fontWeight: '600', color: Colors.text },
+  sectionSubtitle: { fontSize: 13, color: Colors.textMuted, marginBottom: 8 },
   editChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#FFB3CF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radii.pill,
+    backgroundColor: Colors.primarySoft,
   },
-  editChipText: {
-    fontSize: 12,
-    color: '#FF6FB5',
-    fontWeight: '500',
-  },
+  editChipText: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
   label: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 10,
-    color: '#444',
+    marginTop: 14,
+    color: Colors.textSubtle,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  value: {
-    fontSize: 14,
-    color: '#333',
-    marginTop: 2,
-  },
+  value: { fontSize: 15, color: Colors.text, marginTop: 3 },
   input: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginTop: 4,
-    backgroundColor: '#FFFFFF',
+    borderColor: Colors.border,
+    borderRadius: Radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 6,
+    backgroundColor: Colors.cardBackground,
+    fontSize: 15,
+    color: Colors.text,
   },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
+  textArea: { height: 90, textAlignVertical: 'top' },
   button: {
-    backgroundColor: '#FF6FB5',
+    backgroundColor: Colors.primary,
     paddingVertical: 14,
-    borderRadius: 999,
+    borderRadius: Radii.pill,
     alignItems: 'center',
     marginTop: 20,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  buttonText: { color: Colors.onPrimary, fontSize: 15, fontWeight: '600' },
   buttonOutline: {
     borderWidth: 1,
-    borderColor: '#FF6FB5',
+    borderColor: Colors.border,
     paddingVertical: 12,
-    borderRadius: 999,
+    borderRadius: Radii.pill,
     alignItems: 'center',
     marginTop: 10,
+    backgroundColor: Colors.cardBackground,
   },
-  buttonOutlineText: {
-    color: '#FF6FB5',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  sectionDivider: {
-    height: 1,
-    backgroundColor: '#FFD1E8',
-    marginVertical: 24,
-  },
-  statusButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  statusButton: {
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 10,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  statusButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  done: {
-    backgroundColor: '#6FD66F', // verde
-  },
-  pending: {
-    backgroundColor: '#FFB347', // naranja
-  },
-  cancelled: {
-    backgroundColor: '#FF6B6B', // rojo
-  },
-  noShow: {
-    backgroundColor: '#A785FF', // morado
-  },
-  labelSmall: {
-    fontSize: 12,
-    color: '#555555',
-    marginTop: 4,
-    marginBottom: 4,
-  },
+  buttonOutlineText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
+  sectionDivider: { height: 0 },
+  labelSmall: { fontSize: 12, color: Colors.textMuted, marginTop: 6, marginBottom: 6, fontWeight: '600' },
 });

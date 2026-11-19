@@ -1,15 +1,15 @@
 // app/(tabs)/clientas.tsx
-import React, { useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppointments } from '../../context/AppointmentsContext';
-import { Colors } from '../../constants/theme';
+import { Colors, Radii, Shadow, Typography } from '../../constants/theme';
+import { Avatar, Chip, EmptyState, Fab, ScreenHeader, money } from '../../components/ui';
+import { formatShortDate } from '../../lib/dates';
+
+type SortKey = 'recientes' | 'visitas' | 'gasto';
 
 
 interface ClientSummary {
@@ -85,172 +85,132 @@ export default function ClientasScreen() {
     return list;
   }, [appointments]);
 
-  const renderItem = ({ item }: { item: ClientSummary }) => {
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() =>
-          router.push({
-            pathname: '/client/detail',
-            params: {
-              clientKey: item.id,          // tu key actual "name::phone" o "name"
-              name: item.name,
-              phone: item.phone ?? '',
-            },
-          })
-        }
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState<SortKey>('recientes');
 
-      >
-        <View style={styles.cardRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{item.name}</Text>
-            {item.phone ? (
-              <Text style={styles.phone}>{item.phone}</Text>
-            ) : (
-              <Text style={styles.phoneEmpty}>Sin teléfono</Text>
-            )}
-          </View>
-          <View style={styles.chip}>
-            <Text style={styles.chipText}>
-              {item.totalAppointments} cita
-              {item.totalAppointments === 1 ? '' : 's'}
-            </Text>
-          </View>
-        </View>
+  const visible = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    const digits = t.replace(/\D/g, '');
+    let list = clients.filter(c => {
+      if (!t) return true;
+      if (c.name.toLowerCase().includes(t)) return true;
+      return !!digits && (c.phone ?? '').replace(/\D/g, '').includes(digits);
+    });
+    if (sort === 'visitas') list = [...list].sort((a, b) => b.totalAppointments - a.totalAppointments);
+    if (sort === 'gasto') list = [...list].sort((a, b) => b.totalRevenue - a.totalRevenue);
+    return list;
+  }, [clients, q, sort]);
 
-        <View style={styles.cardRowBottom}>
-          <Text style={styles.labelSmall}>
-            Realizadas:{' '}
-            <Text style={styles.valueSmall}>{item.totalRealized}</Text>
-          </Text>
-          <Text style={styles.labelSmall}>
-            Total gastado:{' '}
-            <Text style={styles.valueMoney}>
-              ${item.totalRevenue.toFixed(2)}
-            </Text>
-          </Text>
-        </View>
+  const openClient = (item: ClientSummary) =>
+    router.push({
+      pathname: '/client/detail',
+      params: { clientKey: item.id, name: item.name, phone: item.phone ?? '' },
+    });
 
-        {item.lastDate && (
-          <Text style={styles.lastVisit}>
-            Última visita: {item.lastDate}
-          </Text>
-        )}
-      </TouchableOpacity>
-    );
-  };
+  const renderItem = ({ item }: { item: ClientSummary }) => (
+    <TouchableOpacity style={styles.row} activeOpacity={0.8} onPress={() => openClient(item)}>
+      <Avatar name={item.name} size={44} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.name} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={Typography.caption} numberOfLines={1}>
+          {item.totalAppointments} {item.totalAppointments === 1 ? 'cita' : 'citas'}
+          {item.lastDate ? ` · última ${formatShortDate(item.lastDate)}` : ''}
+        </Text>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={styles.spent}>{money(item.totalRevenue)}</Text>
+        <Text style={Typography.caption}>gastado</Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Clientas</Text>
-      <Text style={styles.subtitle}>
-        Lista generada a partir de tus citas registradas.
-      </Text>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+        <ScreenHeader title="Clientas" subtitle={`${clients.length} en total`} />
 
-      {clients.length === 0 ? (
-        <Text style={styles.empty}>
-          Aún no tienes citas registradas. Cuando agendes, aquí verás a tus
-          clientas.
-        </Text>
+        <View style={styles.search}>
+          <Ionicons name="search" size={18} color={Colors.textSubtle} />
+          <TextInput
+            style={styles.searchInput}
+            value={q}
+            onChangeText={setQ}
+            placeholder="Buscar por nombre o teléfono"
+            placeholderTextColor={Colors.textSubtle}
+          />
+          {q ? (
+            <TouchableOpacity onPress={() => setQ('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={Colors.textSubtle} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <View style={styles.chips}>
+          <Chip label="Recientes" active={sort === 'recientes'} onPress={() => setSort('recientes')} />
+          <Chip label="Más visitas" active={sort === 'visitas'} onPress={() => setSort('visitas')} />
+          <Chip label="Mayor gasto" active={sort === 'gasto'} onPress={() => setSort('gasto')} />
+        </View>
+      </View>
+
+      {visible.length === 0 ? (
+        <EmptyState
+          icon="people-outline"
+          title={clients.length === 0 ? 'Aún no tienes clientas' : 'Sin resultados'}
+          text={
+            clients.length === 0
+              ? 'Cuando agendes citas, aquí verás a tus clientas con su historial.'
+              : 'Prueba con otro nombre o número.'
+          }
+          action={clients.length === 0 ? 'Agendar primera cita' : undefined}
+          onAction={() => router.push('/appointment/new')}
+        />
       ) : (
         <FlatList
-          data={clients}
+          data={visible}
           keyExtractor={item => item.id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+      <Fab onPress={() => router.push('/appointment/new')} icon="add" />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.screenBackground,
-    padding: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  empty: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    marginTop: 16,
-    fontStyle: 'italic',
-  },
-  card: {
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 1,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-  },
-  cardRow: {
+  container: { flex: 1, backgroundColor: Colors.screenBackground },
+  search: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  cardRowBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  phone: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  phoneEmpty: {
-    fontSize: 12,
-    color: Colors.textSubtle,
-    marginTop: 2,
-    fontStyle: 'italic',
-  },
-  chip: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
+    gap: 8,
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.pill,
+    paddingHorizontal: 14,
     paddingVertical: 4,
-    backgroundColor: Colors.primarySoft,
   },
-  chipText: {
-    fontSize: 11,
-    color: Colors.primary,
-    fontWeight: '600',
+  searchInput: { flex: 1, fontSize: 15, color: Colors.text, paddingVertical: 8 },
+  chips: { flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 12 },
+  list: {
+    marginHorizontal: 20,
+    paddingBottom: 120,
   },
-  labelSmall: {
-    fontSize: 12,
-    color: Colors.textMuted,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    padding: 12,
+    marginBottom: 10,
+    ...Shadow.card,
   },
-  valueSmall: {
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  valueMoney: {
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  lastVisit: {
-    fontSize: 11,
-    color: Colors.textSubtle,
-    marginTop: 4,
-  },
+  name: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  spent: { fontSize: 15, fontWeight: '700', color: Colors.text },
 });

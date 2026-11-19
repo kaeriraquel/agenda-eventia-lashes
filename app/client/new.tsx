@@ -21,6 +21,7 @@ import { useAuth } from '../../context/AuthContext';
 import { normalizePhone } from '../../lib/phone';
 import { useBrand } from '../../context/BrandContext';
 import { toLocalDateKey, parseDateKey } from '../../lib/dates';
+import { Colors } from '../../constants/theme';
 
 type ClientRow = {
   id: string;
@@ -500,52 +501,52 @@ export default function NewAppointmentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, backgroundColor: '#FFF7FC', flexGrow: 1 },
+  container: { padding: 16, backgroundColor: Colors.screenBackground, flexGrow: 1 },
   title: { fontSize: 22, fontWeight: '700', marginBottom: 6 },
   label: { fontSize: 14, fontWeight: '500', marginTop: 10 },
   input: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
+    borderColor: Colors.border,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginTop: 4,
     backgroundColor: '#FFFFFF',
   },
   textArea: { height: 80, textAlignVertical: 'top' },
-  hint: { fontSize: 12, color: '#777', marginTop: 6 },
+  hint: { fontSize: 12, color: Colors.textMuted, marginTop: 6 },
 
   moduleRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   moduleBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#FFD1E8',
+    borderColor: Colors.border,
     borderRadius: 999,
     paddingVertical: 8,
     alignItems: 'center',
     backgroundColor: '#fff',
   },
-  moduleBtnActive: { backgroundColor: '#FF6FB5', borderColor: '#FF6FB5' },
-  moduleBtnText: { fontSize: 13, color: '#FF6FB5', fontWeight: '600' },
+  moduleBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  moduleBtnText: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
   moduleBtnTextActive: { color: '#fff' },
 
   suggestBox: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
+    borderColor: Colors.border,
     borderRadius: 12,
     backgroundColor: '#fff',
     marginTop: 6,
     overflow: 'hidden',
   },
   suggestRow: { paddingVertical: 10, paddingHorizontal: 12 },
-  suggestRowBorder: { borderBottomWidth: 1, borderBottomColor: '#FFE1F0' },
-  suggestName: { fontSize: 14, fontWeight: '600', color: '#222' },
-  suggestPhone: { fontSize: 12, color: '#777', marginTop: 2 },
+  suggestRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.primarySoft },
+  suggestName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  suggestPhone: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
 
   selectorBtn: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
+    borderColor: Colors.border,
+    borderRadius: 14,
     padding: 12,
     backgroundColor: '#fff',
     marginTop: 4,
@@ -553,7 +554,7 @@ const styles = StyleSheet.create({
   selectorText: { fontSize: 15 },
 
   saveButton: {
-    backgroundColor: '#FF6FB5',
+    backgroundColor: Colors.primary,
     paddingVertical: 14,
     borderRadius: 999,
     alignItems: 'center',

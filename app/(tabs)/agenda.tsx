@@ -1,391 +1,335 @@
 // app/(tabs)/agenda.tsx
+// Calendario visual: semana o mes, con la lista del día en forma de línea de tiempo.
 import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SectionList,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAppointments } from '../../context/AppointmentsContext';
-import { Colors } from '../../constants/theme';
-import { toLocalDateKey, parseDateKey } from '../../lib/dates';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useAppointments, Appointment } from '../../context/AppointmentsContext';
+import { Colors, Radii, Typography } from '../../constants/theme';
+import { Screen, Chip, EmptyState, Fab, money } from '../../components/ui';
+import { AppointmentRow } from '../../components/AppointmentRow';
+import {
+  addDays,
+  dayNameShort,
+  formatLongDate,
+  monthName,
+  parseDateKey,
+  startOfWeek,
+  todayKey,
+  toLocalDateKey,
+} from '../../lib/dates';
+
+type ViewMode = 'semana' | 'mes';
+type Filter = 'todas' | 'pendiente' | 'realizada';
+
+const WEEK_HEAD = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
 export default function AgendaScreen() {
-  const { appointments } = useAppointments();
   const router = useRouter();
+  const { appointments } = useAppointments();
 
-  //agenda tipo calendario
-  type RangeFilter = 'hoy' | 'manana' | '7dias' | 'mes' | 'todas';
+  const today = todayKey();
+  const [selected, setSelected] = useState(today);
+  const [mode, setMode] = useState<ViewMode>('semana');
+  const [filter, setFilter] = useState<Filter>('todas');
+  // mes mostrado en la vista mensual (primer día del mes)
+  const [monthCursor, setMonthCursor] = useState(() => today.slice(0, 8) + '01');
 
-  const [range, setRange] = useState<RangeFilter>('7dias');
-
-  const toDateKey = toLocalDateKey;
-
-  const isInRange = (dateStr: string, range: RangeFilter) => {
-    if (!dateStr) return false;
-    const today = new Date();
-    const start = new Date(today);
-    start.setHours(0, 0, 0, 0);
-
-    const d = parseDateKey(dateStr);
-    if (isNaN(d.getTime())) return false;
-
-    const dayKey = toDateKey(d);
-    const todayKey = toDateKey(start);
-
-    const tomorrow = new Date(start);
-    tomorrow.setDate(start.getDate() + 1);
-    const tomorrowKey = toDateKey(tomorrow);
-
-    if (range === 'todas') return true;
-    if (range === 'hoy') return dayKey === todayKey;
-    if (range === 'manana') return dayKey === tomorrowKey;
-
-    if (range === '7dias') {
-      const end = new Date(start);
-      end.setDate(start.getDate() + 7);
-      return d >= start && d < end;
-    }
-
-    if (range === 'mes') {
-      const end = new Date(start);
-      end.setMonth(start.getMonth() + 1);
-      return d >= start && d < end;
-    }
-
-    return true;
-  };
-
-
-  // Helper para mostrar fecha bonita
-  const formatDateForLabel = (dateStr: string): string => {
-    const today = new Date();
-    const d = parseDateKey(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-
-    const todayStr = toLocalDateKey(today);
-    const tomorrow = new Date();
-    tomorrow.setDate(today.getDate() + 1);
-    const tomorrowStr = toLocalDateKey(tomorrow);
-
-    const onlyDateStr = toLocalDateKey(d);
-
-    if (onlyDateStr === todayStr) return 'Hoy';
-    if (onlyDateStr === tomorrowStr) return 'Mañana';
-
-    // Formato DD/MM/YYYY
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
-
-  // Ordenamos y agrupamos por fecha (YYYY-MM-DD)
-  const sections = useMemo(() => {
-    // Copia ordenada por fecha+hora
-    const filtered = appointments.filter(a => isInRange(a.date, range));
-
-    const sorted = [...filtered].sort((a, b) => {
-      const keyA = `${a.date || ''} ${a.time || ''}`;
-      const keyB = `${b.date || ''} ${b.time || ''}`;
-
-      // En "Todas": más nueva → más antigua
-      if (range === 'todas') {
-        return keyB.localeCompare(keyA);
-      }
-
-      // En los demás rangos: normal (antigua → nueva)
-      return keyA.localeCompare(keyB);
-    });
-
-
-
-    const map = new Map<string, typeof appointments>();
-
-    for (const a of sorted) {
-      const dateKey = a.date || 'Sin fecha';
-      const list = map.get(dateKey) ?? [];
+  // Citas agrupadas por fecha
+  const byDate = useMemo(() => {
+    const m = new Map<string, Appointment[]>();
+    for (const a of appointments) {
+      if (!a.date) continue;
+      const list = m.get(a.date) ?? [];
       list.push(a);
-      map.set(dateKey, list);
+      m.set(a.date, list);
     }
+    for (const list of m.values()) list.sort((x, y) => (x.time || '').localeCompare(y.time || ''));
+    return m;
+  }, [appointments]);
 
-    return Array.from(map.entries()).map(([dateKey, aps]) => ({
-      title: formatDateForLabel(dateKey),
-      dateKey,
-      data: aps,
-    }));
-  }, [appointments, range]);
+  const countActive = (key: string) =>
+    (byDate.get(key) ?? []).filter(a => a.status !== 'cancelada').length;
 
-  const renderStatusChip = (status: string) => {
-    let bg = Colors.primarySoft;
-    let textColor = Colors.primary;
-    let label = status;
+  const dayList = useMemo(() => {
+    const list = byDate.get(selected) ?? [];
+    return filter === 'todas' ? list : list.filter(a => a.status === filter);
+  }, [byDate, selected, filter]);
 
-    if (status === 'pendiente') {
-      bg = '#FFF5D9';
-      textColor = Colors.warning;
-      label = 'Pendiente';
-    } else if (status === 'realizada') {
-      bg = '#E7F9E7';
-      textColor = Colors.success;
-      label = 'Realizada';
-    } else if (status === 'cancelada') {
-      bg = '#FFE5E5';
-      textColor = Colors.danger;
-      label = 'Cancelada';
-    } else if (status === 'no_asistio') {
-      bg = '#F2E9FF';
-      textColor = Colors.info;
-      label = 'No asistió';
-    }
+  const dayTotal = useMemo(
+    () =>
+      (byDate.get(selected) ?? [])
+        .filter(a => a.status !== 'cancelada' && a.status !== 'no_asistio')
+        .reduce((s, a) => s + (a.price ?? 0), 0),
+    [byDate, selected]
+  );
 
-    return (
-      <View style={[styles.statusChip, { backgroundColor: bg }]}>
-        <Text style={[styles.statusChipText, { color: textColor }]}>
-          {label}
-        </Text>
-      </View>
-    );
+  const selDate = parseDateKey(selected);
+  const headerMonth =
+    mode === 'mes'
+      ? parseDateKey(monthCursor)
+      : selDate;
+
+  const goToday = () => {
+    setSelected(today);
+    setMonthCursor(today.slice(0, 8) + '01');
   };
 
-  const renderItem = ({ item }: { item: any }) => {
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() =>
-          router.push({
-            pathname: '/appointment/[id]',
-            params: { id: item.id },
-          })
-        }
-      >
-        <View style={styles.cardHeaderRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.clientName}>
-              {item.clientName || 'Sin nombre'}
-            </Text>
-            <Text style={styles.serviceText}>
-              {item.service || 'Sin servicio seleccionado'}
-            </Text>
-          </View>
-          {renderStatusChip(item.status)}
-        </View>
-
-        <View style={styles.cardInfoRow}>
-          <Text style={styles.infoText}>
-            🕒 {item.time || 'Sin hora'}
-          </Text>
-          {item.price != null && (
-            <Text style={styles.priceText}>
-              ${item.price.toFixed(2)} MXN
-            </Text>
-          )}
-        </View>
-
-        {item.notes ? (
-          <Text style={styles.notesText} numberOfLines={2}>
-            Notas: {item.notes}
-          </Text>
-        ) : null}
-      </TouchableOpacity>
-    );
+  const selectDay = (key: string) => {
+    setSelected(key);
+    if (key.slice(0, 7) !== monthCursor.slice(0, 7)) setMonthCursor(key.slice(0, 8) + '01');
   };
+
+  /* ---------- Semana ---------- */
+  const weekStart = startOfWeek(selected);
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  /* ---------- Mes ---------- */
+  const monthCells = useMemo(() => {
+    const first = parseDateKey(monthCursor);
+    const lead = (first.getDay() + 6) % 7; // lunes = 0
+    const start = addDays(monthCursor, -lead);
+    return Array.from({ length: 42 }, (_, i) => addDays(start, i));
+  }, [monthCursor]);
+
+  const shiftMonth = (n: number) => {
+    const d = parseDateKey(monthCursor);
+    d.setMonth(d.getMonth() + n);
+    setMonthCursor(toLocalDateKey(d).slice(0, 8) + '01');
+  };
+
+  const newForSelected = () =>
+    router.push({ pathname: '/appointment/new', params: { prefillDate: selected } });
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Agenda</Text>
-      <Text style={styles.subtitle}>
-        Revisa y organiza tus citas por día.
-      </Text>
+    <View style={{ flex: 1, backgroundColor: Colors.screenBackground }}>
+      <Screen>
+        {/* Encabezado */}
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={Typography.overline}>{headerMonth.getFullYear()}</Text>
+            <Text style={Typography.display}>
+              {monthName(headerMonth.getMonth()).replace(/^./, c => c.toUpperCase())}
+            </Text>
+          </View>
+          {selected !== today ? <Chip label="Hoy" onPress={goToday} /> : null}
+          <View style={styles.segment}>
+            {(['semana', 'mes'] as ViewMode[]).map(m => (
+              <TouchableOpacity
+                key={m}
+                onPress={() => setMode(m)}
+                style={[styles.segItem, mode === m && styles.segItemActive]}
+              >
+                <Text style={[styles.segText, mode === m && styles.segTextActive]}>
+                  {m === 'semana' ? 'Semana' : 'Mes'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-      <View style={styles.filterRow}>
-        {[
-          ['Hoy', 'hoy'],
-          ['Mañana', 'manana'],
-          ['7 días', '7dias'],
-          ['Mes', 'mes'],
-          ['Todas', 'todas'],
-        ].map(([label, key]) => {
-          const active = range === key;
-          return (
-            <TouchableOpacity
-              key={key as string}
-              style={[styles.filterChip, active && styles.filterChipActive]}
-              onPress={() => setRange(key as any)}
-            >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                {label}
-              </Text>
+        {mode === 'semana' ? (
+          <View style={styles.weekRow}>
+            <TouchableOpacity onPress={() => selectDay(addDays(selected, -7))} hitSlop={10}>
+              <Ionicons name="chevron-back" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
-          );
-        })}
-      </View>
+            {weekDays.map(k => {
+              const d = parseDateKey(k);
+              const isSel = k === selected;
+              const isToday = k === today;
+              const n = countActive(k);
+              return (
+                <TouchableOpacity
+                  key={k}
+                  onPress={() => selectDay(k)}
+                  style={[styles.dayCell, isSel && styles.dayCellSel, !isSel && isToday && styles.dayCellToday]}
+                >
+                  <Text style={[styles.dayName, isSel && styles.textOnPrimary]}>{dayNameShort(d)}</Text>
+                  <Text style={[styles.dayNum, isSel && styles.textOnPrimary]}>{d.getDate()}</Text>
+                  <View style={styles.dotsRow}>
+                    {Array.from({ length: Math.min(n, 3) }).map((_, i) => (
+                      <View
+                        key={i}
+                        style={[styles.dot, { backgroundColor: isSel ? '#fff' : Colors.primary }]}
+                      />
+                    ))}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity onPress={() => selectDay(addDays(selected, 7))} hitSlop={10}>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.monthCard}>
+            <View style={styles.monthNav}>
+              <TouchableOpacity onPress={() => shiftMonth(-1)} hitSlop={10}>
+                <Ionicons name="chevron-back" size={20} color={Colors.textMuted} />
+              </TouchableOpacity>
+              <Text style={Typography.heading}>
+                {monthName(parseDateKey(monthCursor).getMonth()).replace(/^./, c => c.toUpperCase())}{' '}
+                {parseDateKey(monthCursor).getFullYear()}
+              </Text>
+              <TouchableOpacity onPress={() => shiftMonth(1)} hitSlop={10}>
+                <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.gridRow}>
+              {WEEK_HEAD.map((h, i) => (
+                <Text key={i} style={styles.gridHead}>
+                  {h}
+                </Text>
+              ))}
+            </View>
+            <View style={styles.grid}>
+              {monthCells.map(k => {
+                const d = parseDateKey(k);
+                const inMonth = k.slice(0, 7) === monthCursor.slice(0, 7);
+                const isSel = k === selected;
+                const isToday = k === today;
+                const n = countActive(k);
+                return (
+                  <TouchableOpacity key={k} style={styles.gridCell} onPress={() => selectDay(k)}>
+                    <View
+                      style={[
+                        styles.gridDay,
+                        isSel && styles.dayCellSel,
+                        !isSel && isToday && styles.dayCellToday,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.gridNum,
+                          !inMonth && { color: Colors.textSubtle },
+                          isSel && styles.textOnPrimary,
+                        ]}
+                      >
+                        {d.getDate()}
+                      </Text>
+                    </View>
+                    {n > 0 ? (
+                      <Text style={[styles.gridCount, !inMonth && { opacity: 0.5 }]}>{n}</Text>
+                    ) : (
+                      <Text style={styles.gridCount}> </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
+        {/* Resumen del día */}
+        <View style={styles.dayHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={Typography.heading}>
+              {formatLongDate(selected).replace(/^./, c => c.toUpperCase())}
+            </Text>
+            <Text style={Typography.caption}>
+              {countActive(selected)} {countActive(selected) === 1 ? 'cita' : 'citas'}
+              {dayTotal > 0 ? ` · ${money(dayTotal)} estimado` : ''}
+            </Text>
+          </View>
+        </View>
 
-      {sections.length === 0 ? (
-        <Text style={styles.emptyText}>
-          No hay citas en este rango. Prueba "Todas" o agrega una nueva.
-        </Text>
-      ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          renderSectionHeader={({ section }) => (
-            <Text style={styles.sectionHeader}>{section.title}</Text>
-          )}
-          contentContainerStyle={{ paddingBottom: 80 }}
-        />
-      )}
+        <View style={styles.filters}>
+          <Chip label="Todas" active={filter === 'todas'} onPress={() => setFilter('todas')} />
+          <Chip label="Pendientes" active={filter === 'pendiente'} onPress={() => setFilter('pendiente')} />
+          <Chip label="Realizadas" active={filter === 'realizada'} onPress={() => setFilter('realizada')} />
+        </View>
 
-      {/* Botón para agregar cita */}
-      <View style={styles.addButtonWrapper}>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => router.push('/appointment/new')}
-        >
-          <Text style={styles.addButtonText}>+ Agregar cita</Text>
-        </TouchableOpacity>
-      </View>
+        {dayList.length === 0 ? (
+          <EmptyState
+            icon="calendar-clear-outline"
+            title={filter === 'todas' ? 'Día libre' : 'Sin citas con ese filtro'}
+            text={filter === 'todas' ? 'No hay citas agendadas para este día.' : undefined}
+            action={filter === 'todas' ? 'Agendar cita' : undefined}
+            onAction={newForSelected}
+          />
+        ) : (
+          dayList.map(a => (
+            <AppointmentRow
+              key={a.id}
+              appointment={a}
+              onPress={() => router.push({ pathname: '/appointment/[id]', params: { id: a.id } })}
+            />
+          ))
+        )}
+      </Screen>
+      <Fab onPress={newForSelected} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  header: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginTop: 8, marginBottom: 16 },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surfaceMuted,
+    borderRadius: Radii.pill,
+    padding: 3,
+  },
+  segItem: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: Radii.pill },
+  segItemActive: { backgroundColor: Colors.cardBackground },
+  segText: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
+  segTextActive: { color: Colors.primary },
+
+  weekRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dayCell: {
     flex: 1,
-    backgroundColor: Colors.screenBackground,
-    padding: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    marginTop: 16,
-    fontStyle: 'italic',
-  },
-  sectionHeader: {
-    marginTop: 12,
-    marginBottom: 4,
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  card: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: Radii.md,
     backgroundColor: Colors.cardBackground,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 8,
     borderWidth: 1,
     borderColor: Colors.borderSoft,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 3,
-    elevation: 1,
   },
-  cardHeaderRow: {
+  dayCellSel: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  dayCellToday: { borderColor: Colors.primaryLight, borderWidth: 1.5 },
+  dayName: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
+  dayNum: { fontSize: 17, fontWeight: '700', color: Colors.text, marginTop: 2 },
+  textOnPrimary: { color: Colors.onPrimary },
+  dotsRow: { flexDirection: 'row', gap: 2, height: 6, marginTop: 4 },
+  dot: { width: 5, height: 5, borderRadius: 3 },
+
+  monthCard: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: Radii.card,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    padding: 12,
+  },
+  monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
-  clientName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  serviceText: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  statusChip: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    alignSelf: 'flex-start',
-  },
-  statusChipText: {
+  gridRow: { flexDirection: 'row' },
+  gridHead: {
+    width: `${100 / 7}%`,
+    textAlign: 'center',
     fontSize: 11,
     fontWeight: '600',
-  },
-  cardInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  infoText: {
-    fontSize: 12,
-    color: Colors.textMuted,
-  },
-  priceText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  notesText: {
-    fontSize: 12,
     color: Colors.textSubtle,
-    marginTop: 4,
+    marginBottom: 4,
   },
-  addButtonWrapper: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 16,
-  },
-  addButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 999,
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  gridCell: { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 3 },
+  gridDay: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
-    paddingVertical: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 10,
-  },
-  filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    backgroundColor: Colors.cardBackground,
+    borderColor: 'transparent',
   },
-  filterChipActive: {
-    backgroundColor: Colors.primarySoft,
-    borderColor: Colors.primary,
-  },
-  filterChipText: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: '600',
-  },
-  filterChipTextActive: {
-    color: Colors.primary,
-  },
+  gridNum: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  gridCount: { fontSize: 10, fontWeight: '700', color: Colors.primary, height: 13 },
 
+  dayHeader: { flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 10 },
+  filters: { flexDirection: 'row', gap: 8, marginBottom: 14 },
 });

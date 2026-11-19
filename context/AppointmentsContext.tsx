@@ -47,6 +47,8 @@ export type TechnicalSheet = LashesTechnicalSheet | NailsTechnicalSheet;
 
 export type ServiceModule = 'lashes' | 'nails';
 
+export type PaymentMethod = 'efectivo' | 'transferencia' | 'tarjeta';
+
 export interface Appointment {
   id: string;
   clientId?: string | null; // ✅ NUEVO
@@ -62,6 +64,12 @@ export interface Appointment {
   mappingLeft?: string | null;
   mappingRight?: string | null;
   module?: ServiceModule; // si ya lo estás usando
+
+  // ===== Caja y pagos =====
+  deposit?: number | null; // anticipo ya recibido (forma parte del precio)
+  tip?: number | null; // propina
+  paymentMethod?: PaymentMethod | null;
+  paid?: boolean; // ¿ya se cobró completo?
 }
 
 
@@ -82,12 +90,15 @@ interface AppointmentsContextValue {
     phone?: string;
     price?: number | null;
     module?: ServiceModule;
+    deposit?: number | null;
+    paymentMethod?: PaymentMethod | null;
   }) => Promise<void>;
 
+  /** Devuelve true si se guardó, false si falló */
   updateAppointment: (
     id: string,
     updates: Partial<Appointment>
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 
   deleteAppointment: (id: string) => Promise<void>;
 
@@ -117,6 +128,17 @@ type DbAppointment = {
   mapping_left: string | null;
   mapping_right: string | null;
   module: string | null; // si existe
+  // columnas de caja (ver supabase/02_caja_y_pagos.sql)
+  deposit?: number | string | null;
+  tip?: number | string | null;
+  payment_method?: string | null;
+  paid?: boolean | null;
+};
+
+const toNum = (v: number | string | null | undefined): number | null => {
+  if (v == null || v === '') return null;
+  const n = typeof v === 'string' ? Number(v) : v;
+  return isNaN(n) ? null : n;
 };
 
 function dbToApp(row: DbAppointment): Appointment {
@@ -135,6 +157,10 @@ function dbToApp(row: DbAppointment): Appointment {
     mappingLeft: row.mapping_left ?? null,
     mappingRight: row.mapping_right ?? null,
     module: (row.module as any) ?? 'lashes',
+    deposit: toNum(row.deposit),
+    tip: toNum(row.tip),
+    paymentMethod: (row.payment_method as PaymentMethod) ?? null,
+    paid: !!row.paid,
   };
 }
 
@@ -154,6 +180,11 @@ function appToDbInsert(userId: string, appt: Omit<Appointment, 'id'>) {
     mapping_left: appt.mappingLeft ?? null,
     mapping_right: appt.mappingRight ?? null,
     module: (appt.module as any) ?? 'lashes',
+    // solo se mandan si tienen valor (así funciona aunque aún no corras el SQL de caja)
+    ...(appt.deposit != null ? { deposit: appt.deposit } : {}),
+    ...(appt.tip != null ? { tip: appt.tip } : {}),
+    ...(appt.paymentMethod ? { payment_method: appt.paymentMethod } : {}),
+    ...(appt.paid ? { paid: true } : {}),
   };
 }
 
@@ -175,6 +206,11 @@ function appToDbUpdate(updates: Partial<Appointment>) {
     mapping_right:
       updates.mappingRight === undefined ? undefined : updates.mappingRight ?? null,
     module: updates.module === undefined ? undefined : updates.module ?? 'lashes',
+    deposit: updates.deposit === undefined ? undefined : updates.deposit ?? null,
+    tip: updates.tip === undefined ? undefined : updates.tip ?? null,
+    payment_method:
+      updates.paymentMethod === undefined ? undefined : updates.paymentMethod ?? null,
+    paid: updates.paid === undefined ? undefined : !!updates.paid,
   };
 }
 
@@ -241,6 +277,8 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
     phone?: string;
     price?: number | null;
     module?: ServiceModule;
+    deposit?: number | null;
+    paymentMethod?: PaymentMethod | null;
   }) {
     const payload: Omit<Appointment, 'id'> = {
       clientId: data.clientId ?? null, // ✅ NUEVO
@@ -256,6 +294,10 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
       mappingLeft: null,
       mappingRight: null,
       module: data.module ?? 'lashes',
+      deposit: data.deposit ?? null,
+      tip: null,
+      paymentMethod: data.paymentMethod ?? null,
+      paid: false,
     };
 
 
@@ -283,7 +325,7 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
   }
 
   // 4) Update
-  async function updateAppointment(id: string, updates: Partial<Appointment>) {
+  async function updateAppointment(id: string, updates: Partial<Appointment>): Promise<boolean> {
     // PRO: update en supabase + actualizar state
     if (isPro && user?.id) {
       const dbUpdates = appToDbUpdate(updates);
@@ -298,18 +340,19 @@ export function AppointmentsProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error('Error update supabase:', error);
-        return;
+        return false;
       }
 
       const updatedAppt = dbToApp(updated as DbAppointment);
       setAppointments(prev =>
         prev.map(a => (a.id === id ? { ...a, ...updatedAppt } : a))
       );
-      return;
+      return true;
     }
 
     // GRATIS: update local
     setAppointments(prev => prev.map(a => (a.id === id ? { ...a, ...updates } : a)));
+    return true;
   }
 
   async function deleteAppointment(id: string) {

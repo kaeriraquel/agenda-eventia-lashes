@@ -8,6 +8,7 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import { Colors } from '../constants/theme';
 
 interface SelectFieldProps {
   label: string;
@@ -40,9 +41,10 @@ export function SelectField({
         onPress={() => setVisible(true)}
         activeOpacity={0.8}
       >
-        <Text style={value ? styles.valueText : styles.placeholderText}>
+        <Text style={value ? styles.valueText : styles.placeholderText} numberOfLines={1}>
           {value || placeholder}
         </Text>
+        <Text style={styles.caret}>▾</Text>
       </TouchableOpacity>
 
       <Modal
@@ -60,10 +62,13 @@ export function SelectField({
               keyExtractor={item => item}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.option}
+                  style={[styles.option, item === value && styles.optionActive]}
                   onPress={() => handleSelect(item)}
                 >
-                  <Text style={styles.optionText}>{item}</Text>
+                  <Text style={[styles.optionText, item === value && styles.optionTextActive]}>
+                    {item}
+                  </Text>
+                  {item === value ? <Text style={styles.check}>✓</Text> : null}
                 </TouchableOpacity>
               )}
             />
@@ -82,62 +87,48 @@ export function SelectField({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginTop: 10,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
+  container: { marginTop: 14 },
+  label: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 6 },
   selector: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
+    borderColor: Colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    backgroundColor: Colors.cardBackground,
   },
-  valueText: {
-    fontSize: 15,
-    color: '#333',
-  },
-  placeholderText: {
-    fontSize: 15,
-    color: '#999',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'flex-end',
-  },
+  valueText: { flex: 1, fontSize: 15, color: Colors.text },
+  placeholderText: { flex: 1, fontSize: 15, color: Colors.textSubtle },
+  caret: { color: Colors.textSubtle, fontSize: 14, marginLeft: 8 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(43,43,43,0.35)', justifyContent: 'flex-end' },
   modalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '70%',
-    padding: 16,
+    backgroundColor: Colors.cardBackground,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '75%',
+    padding: 20,
+    paddingBottom: 28,
   },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   option: {
-    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
   },
-  optionText: {
-    fontSize: 15,
-  },
+  optionActive: { backgroundColor: Colors.primarySoft },
+  optionText: { flex: 1, fontSize: 15, color: Colors.text },
+  optionTextActive: { color: Colors.primaryDark, fontWeight: '600' },
+  check: { color: Colors.primary, fontSize: 16, fontWeight: '700' },
   closeButton: {
-    marginTop: 16,
-    paddingVertical: 12,
+    marginTop: 12,
+    paddingVertical: 14,
     borderRadius: 999,
-    backgroundColor: '#FF6FB5',
+    backgroundColor: Colors.surfaceMuted,
     alignItems: 'center',
   },
-  closeButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
+  closeButtonText: { color: Colors.textSecondary, fontWeight: '600' },
 });

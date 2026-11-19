@@ -9,7 +9,8 @@ import {
   Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useAppointments } from '../../context/AppointmentsContext';
+import { useAppointments } from '../context/AppointmentsContext';
+import { Colors } from '../constants/theme';
 
 
 export default function EstadisticasScreen() {
@@ -565,17 +566,16 @@ const {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    backgroundColor: '#FFF7FC',
+    padding: 20, paddingTop: 4,
+    backgroundColor: Colors.screenBackground,
     flexGrow: 1,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '600',
-  },
+    fontSize: 28,
+    fontWeight: '700', color: Colors.text, letterSpacing: -0.5},
   subtitle: {
     fontSize: 13,
-    color: '#777',
+    color: Colors.textMuted,
     marginTop: 4,
     marginBottom: 12,
   },
@@ -611,14 +611,14 @@ const styles = StyleSheet.create({
   cardNumber: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#FF6FB5',
+    color: Colors.primary,
   },
   moneyText: {
     fontSize: 22,
   },
   cardLabel: {
     fontSize: 12,
-    color: '#555',
+    color: Colors.textMuted,
     marginTop: 4,
   },
   sectionCard: {
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
   },
   sectionSubtitle: {
     fontSize: 12,
-    color: '#777',
+    color: Colors.textMuted,
     marginTop: 2,
     marginBottom: 8,
   },
@@ -649,17 +649,17 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    color: '#555',
+    color: Colors.textMuted,
   },
   value: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: Colors.text,
   },
   valueMoney: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FF6FB5',
+    color: Colors.primary,
   },
   chartContainer: {
     marginTop: 8,
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
   chartBar: {
     width: '70%',
     borderRadius: 999,
-    backgroundColor: '#FFB3CF',
+    backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingBottom: 4,
@@ -691,13 +691,13 @@ const styles = StyleSheet.create({
   },
   chartBarLabel: {
     fontSize: 10,
-    color: '#555',
+    color: Colors.textMuted,
     marginTop: 4,
     textAlign: 'center',
   },
   chartEmptyText: {
     fontSize: 12,
-    color: '#777',
+    color: Colors.textMuted,
     fontStyle: 'italic',
   },
   table: {
@@ -706,14 +706,14 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#FFD1E8',
+    borderBottomColor: Colors.border,
     paddingBottom: 4,
     marginBottom: 4,
   },
   tableHeaderText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#444',
+    color: Colors.textSecondary,
   },
   tableRow: {
     flexDirection: 'row',
@@ -721,17 +721,17 @@ const styles = StyleSheet.create({
   },
   tableCellText: {
     fontSize: 12,
-    color: '#333',
+    color: Colors.text,
   },
   emptyText: {
     fontSize: 12,
-    color: '#777',
+    color: Colors.textMuted,
     fontStyle: 'italic',
     marginTop: 4,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
+    borderColor: Colors.border,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
@@ -741,7 +741,7 @@ const styles = StyleSheet.create({
   },
     dateInput: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
+    borderColor: Colors.border,
     paddingHorizontal: 10,
     paddingVertical: 10,
     borderRadius: 8,
@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
   },
   dateInputText: {
     fontSize: 14,
-    color: '#333',
+    color: Colors.text,
   },
   presetRow: {
     flexDirection: 'row',
@@ -762,19 +762,19 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#FFD1E8',
+    borderColor: Colors.border,
     paddingVertical: 6,
     paddingHorizontal: 8,
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
   },
   presetButtonActive: {
-    backgroundColor: '#FF6FB5',
-    borderColor: '#FF6FB5',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   presetButtonText: {
     fontSize: 12,
-    color: '#FF6FB5',
+    color: Colors.primary,
     fontWeight: '500',
   },
   presetButtonTextActive: {

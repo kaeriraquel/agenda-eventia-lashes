@@ -16,13 +16,14 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 
-import { useBrand } from '../../context/BrandContext';
-import { useAuth } from '../../context/AuthContext';
-import { useAppointments } from '../../context/AppointmentsContext';
-import { useClients } from '../../context/ClientsContext';
+import { useBrand } from '../context/BrandContext';
+import { useAuth } from '../context/AuthContext';
+import { useAppointments } from '../context/AppointmentsContext';
+import { useClients } from '../context/ClientsContext';
 
-import { supabase } from '../../lib/supabase';
-import { normalizePhone } from '../../lib/phone';
+import { supabase } from '../lib/supabase';
+import { normalizePhone } from '../lib/phone';
+import { Colors } from '../constants/theme';
 
 type ServiceModule = 'lashes' | 'nails';
 
@@ -192,7 +193,7 @@ export default function ConfiguracionScreen() {
 
     Alert.alert(
       'Importar citas',
-      'Esto subirá a tu cuenta Pro las citas guardadas en este dispositivo y registrará tus clientas. ¿Continuar?',
+      'Esto subirá a tu cuenta las citas que tenías guardadas solo en este teléfono y registrará tus clientas. ¿Continuar?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -302,18 +303,17 @@ export default function ConfiguracionScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Configurar mi marca</Text>
       <Text style={styles.subtitle}>
-        Personaliza el nombre, logo y servicios. En Pro puedes sincronizar tus citas.
+        Personaliza el nombre, logo y servicios de tu estudio.
       </Text>
 
-      {/* PRO */}
+      {/* MI CUENTA */}
       <View style={styles.proCard}>
-        <Text style={styles.sectionTitle}>Versión Pro</Text>
+        <Text style={styles.sectionTitle}>Mi cuenta</Text>
         <Text style={styles.proSubtitle}>
-          {loading
-            ? 'Cargando sesión...'
-            : user
-              ? 'Plan Pro activo: sincronización entre dispositivos.'
-              : 'Gratis: tus datos se guardan solo en este dispositivo.'}
+          {loading ? 'Cargando sesión...' : user?.email ?? ''}
+        </Text>
+        <Text style={styles.proSubtitle}>
+          Plan: Gratis · Pro (sin anuncios y funciones extra) próximamente.
         </Text>
 
         {!loading && user ? (
@@ -325,27 +325,29 @@ export default function ConfiguracionScreen() {
             {importing ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <ActivityIndicator />
-                <Text style={styles.buttonOutlineText}>Importando…</Text>
+                <Text style={styles.buttonOutlineText}>Subiendo…</Text>
               </View>
             ) : (
-              <Text style={styles.buttonOutlineText}>☁️ Importar mis citas locales a Pro</Text>
+              <Text style={styles.buttonOutlineText}>☁️ Subir citas guardadas en este teléfono</Text>
             )}
-          </TouchableOpacity>
-        ) : null}
-
-        {!loading && !user ? (
-          <TouchableOpacity style={styles.proButton} onPress={() => router.push('/auth')}>
-            <Text style={styles.proButtonText}>✨ Iniciar sesión / Crear cuenta</Text>
           </TouchableOpacity>
         ) : null}
 
         {!loading && user ? (
           <TouchableOpacity
             style={styles.proButtonOutline}
-            onPress={async () => {
-              await supabase.auth.signOut();
-              Alert.alert('Sesión cerrada', 'Volviste a modo Gratis.');
-            }}
+            onPress={() =>
+              Alert.alert('Cerrar sesión', '¿Seguro que quieres salir de tu cuenta?', [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Cerrar sesión',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await supabase.auth.signOut();
+                  },
+                },
+              ])
+            }
           >
             <Text style={styles.proButtonOutlineText}>Cerrar sesión</Text>
           </TouchableOpacity>
@@ -385,7 +387,7 @@ export default function ConfiguracionScreen() {
             <Image source={{ uri: logoUri }} style={styles.logo} resizeMode="contain" />
           ) : (
             <Image
-              source={require('../../assets/images/beauty-logo.png')}
+              source={require('../assets/images/beauty-logo.png')}
               style={styles.logo}
               resizeMode="contain"
             />
@@ -436,16 +438,15 @@ export default function ConfiguracionScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    backgroundColor: '#FFF7FC',
+    padding: 20, paddingTop: 4,
+    backgroundColor: Colors.screenBackground,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '600',
-  },
+    fontSize: 28,
+    fontWeight: '700', color: Colors.text, letterSpacing: -0.5},
   subtitle: {
     fontSize: 13,
-    color: '#777',
+    color: Colors.textMuted,
     marginTop: 4,
     marginBottom: 16,
   },
@@ -455,7 +456,7 @@ const styles = StyleSheet.create({
   },
   subtitleSmall: {
     fontSize: 12,
-    color: '#777',
+    color: Colors.textMuted,
     marginTop: 4,
     marginBottom: 10,
   },
@@ -472,11 +473,11 @@ const styles = StyleSheet.create({
   },
   proSubtitle: {
     fontSize: 13,
-    color: '#777',
+    color: Colors.textMuted,
     marginTop: 6,
   },
   proButton: {
-    backgroundColor: '#FF6FB5',
+    backgroundColor: Colors.primary,
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: 'center',
@@ -489,14 +490,14 @@ const styles = StyleSheet.create({
   },
   proButtonOutline: {
     borderWidth: 1,
-    borderColor: '#FF6FB5',
+    borderColor: Colors.primary,
     paddingVertical: 10,
     borderRadius: 999,
     alignItems: 'center',
     marginTop: 12,
   },
   proButtonOutlineText: {
-    color: '#FF6FB5',
+    color: Colors.primary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -515,19 +516,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 8,
-    color: '#444',
+    color: Colors.textSecondary,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#FFD1E8',
-    borderRadius: 10,
+    borderColor: Colors.border,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginTop: 4,
     backgroundColor: '#FFFFFF',
   },
   mainButton: {
-    backgroundColor: '#FF6FB5',
+    backgroundColor: Colors.primary,
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: 'center',
@@ -540,14 +541,14 @@ const styles = StyleSheet.create({
   },
   buttonOutline: {
     borderWidth: 1,
-    borderColor: '#FF6FB5',
+    borderColor: Colors.primary,
     paddingVertical: 10,
     borderRadius: 999,
     alignItems: 'center',
     marginTop: 8,
   },
   buttonOutlineText: {
-    color: '#FF6FB5',
+    color: Colors.primary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -557,7 +558,7 @@ const styles = StyleSheet.create({
   },
   linkButtonText: {
     fontSize: 12,
-    color: '#777',
+    color: Colors.textMuted,
     textDecorationLine: 'underline',
   },
   logoPreviewCard: {
@@ -590,25 +591,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#FFD1E8',
+    borderColor: Colors.border,
     marginTop: 8,
     backgroundColor: '#FFFFFF',
   },
   serviceRowActive: {
-    borderColor: '#FF6FB5',
-    backgroundColor: '#FFE1F0',
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primarySoft,
   },
   serviceCheck: {
     width: 26,
     fontSize: 16,
-    color: '#777',
+    color: Colors.textMuted,
   },
   serviceCheckActive: {
-    color: '#FF6FB5',
+    color: Colors.primary,
   },
   serviceLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: Colors.text,
   },
 });

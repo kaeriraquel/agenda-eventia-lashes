@@ -8,9 +8,22 @@ type BrandState = {
   brandName: string;
   logoUri: string | null;
   enabledServices: ServiceModule[];
+  // Recordatorios por WhatsApp
+  reminderTemplate: string;
+  retouchTemplate: string;
+  retouchDays: number; // cada cuántos días sugerir retoque
 };
 
+// Variables disponibles: {nombre} {fecha} {hora} {servicio} {negocio} {dias}
+export const DEFAULT_REMINDER_TEMPLATE =
+  'Hola {nombre} 💕 te recuerdo tu cita de {servicio} el {fecha} a las {hora} en {negocio}. ¿Me confirmas tu asistencia? ✨';
+export const DEFAULT_RETOUCH_TEMPLATE =
+  'Hola {nombre} 💕 ya pasaron {dias} días desde tu último servicio de {servicio}. ¿Te agendo tu retoque esta semana? ✨ — {negocio}';
+
 type BrandContextValue = BrandState & {
+  setReminderTemplate: (t: string) => void;
+  setRetouchTemplate: (t: string) => void;
+  setRetouchDays: (d: number) => void;
   setBrandName: (name: string) => void;
   setLogoUri: (uri: string | null) => void;
   setEnabledServices: (services: ServiceModule[]) => void;
@@ -21,9 +34,12 @@ type BrandContextValue = BrandState & {
 const STORAGE_KEY = 'agenda_eventia_brand_v1';
 
 const DEFAULT_BRAND: BrandState = {
-  brandName: 'Beauty Lashes RG',
+  brandName: 'Mi estudio',
   logoUri: null,
   enabledServices: ['lashes'],
+  reminderTemplate: DEFAULT_REMINDER_TEMPLATE,
+  retouchTemplate: DEFAULT_RETOUCH_TEMPLATE,
+  retouchDays: 21,
 };
 
 const BrandContext = createContext<BrandContextValue | undefined>(undefined);
@@ -32,6 +48,9 @@ export function BrandProvider({ children }: { children: ReactNode }) {
   const [brandName, setBrandNameState] = useState(DEFAULT_BRAND.brandName);
   const [logoUri, setLogoUriState] = useState<string | null>(DEFAULT_BRAND.logoUri);
   const [enabledServices, setEnabledServicesState] = useState<ServiceModule[]>(DEFAULT_BRAND.enabledServices);
+  const [reminderTemplate, setReminderTemplate] = useState(DEFAULT_BRAND.reminderTemplate);
+  const [retouchTemplate, setRetouchTemplate] = useState(DEFAULT_BRAND.retouchTemplate);
+  const [retouchDays, setRetouchDaysState] = useState(DEFAULT_BRAND.retouchDays);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -47,6 +66,13 @@ export function BrandProvider({ children }: { children: ReactNode }) {
           setEnabledServicesState(
             Array.isArray(list) && list.length > 0 ? (list as ServiceModule[]) : DEFAULT_BRAND.enabledServices
           );
+          setReminderTemplate(parsed.reminderTemplate || DEFAULT_BRAND.reminderTemplate);
+          setRetouchTemplate(parsed.retouchTemplate || DEFAULT_BRAND.retouchTemplate);
+          setRetouchDaysState(
+            typeof parsed.retouchDays === 'number' && parsed.retouchDays > 0
+              ? parsed.retouchDays
+              : DEFAULT_BRAND.retouchDays
+          );
         }
       } catch (e) {
         console.error('Error cargando BrandContext', e);
@@ -61,9 +87,21 @@ export function BrandProvider({ children }: { children: ReactNode }) {
     if (!loaded) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ brandName, logoUri, enabledServices })
+      JSON.stringify({
+        brandName,
+        logoUri,
+        enabledServices,
+        reminderTemplate,
+        retouchTemplate,
+        retouchDays,
+      })
     ).catch(e => console.error('Error guardando BrandContext', e));
-  }, [brandName, logoUri, enabledServices, loaded]);
+  }, [brandName, logoUri, enabledServices, reminderTemplate, retouchTemplate, retouchDays, loaded]);
+
+  const setRetouchDays = (d: number) => {
+    if (!d || d < 1 || d > 120) return;
+    setRetouchDaysState(Math.round(d));
+  };
 
   const setBrandName = (name: string) => setBrandNameState(name);
   const setLogoUri = (uri: string | null) => setLogoUriState(uri);
@@ -85,6 +123,9 @@ export function BrandProvider({ children }: { children: ReactNode }) {
     setBrandNameState(DEFAULT_BRAND.brandName);
     setLogoUriState(DEFAULT_BRAND.logoUri);
     setEnabledServicesState(DEFAULT_BRAND.enabledServices);
+    setReminderTemplate(DEFAULT_BRAND.reminderTemplate);
+    setRetouchTemplate(DEFAULT_BRAND.retouchTemplate);
+    setRetouchDaysState(DEFAULT_BRAND.retouchDays);
   };
 
   return (
@@ -93,6 +134,12 @@ export function BrandProvider({ children }: { children: ReactNode }) {
         brandName,
         logoUri,
         enabledServices,
+        reminderTemplate,
+        retouchTemplate,
+        retouchDays,
+        setReminderTemplate,
+        setRetouchTemplate,
+        setRetouchDays,
         setBrandName,
         setLogoUri,
         setEnabledServices,

@@ -12,6 +12,8 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // PKCE: los enlaces de Google y del correo regresan a la app con un ?code=
+    flowType: 'pkce',
   },
 });
 

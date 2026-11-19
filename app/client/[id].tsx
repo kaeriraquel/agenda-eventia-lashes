@@ -134,13 +134,6 @@ export default function ClientDetailScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* Header simple propio */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backText}>◀ Volver</Text>
-        </TouchableOpacity>
-      </View>
-
       <Text style={styles.title}>{name}</Text>
       {phone ? (
         <Text style={styles.phone}>{phone}</Text>

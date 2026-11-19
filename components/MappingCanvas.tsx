@@ -22,6 +22,8 @@ interface MappingCanvasProps {
   onChange?: (data: string) => void;
   strokeColor?: string;
   strokeWidth?: number;
+  /** Solo mostrar el dibujo, sin poder dibujar ni borrar */
+  readOnly?: boolean;
 }
 
 export const MappingCanvas: React.FC<MappingCanvasProps> = ({
@@ -30,6 +32,7 @@ export const MappingCanvas: React.FC<MappingCanvasProps> = ({
   onChange,
   strokeColor = '#333333',
   strokeWidth = 2,
+  readOnly = false,
 }) => {
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [currentStroke, setCurrentStroke] = useState<Stroke>([]);
@@ -137,7 +140,7 @@ export const MappingCanvas: React.FC<MappingCanvasProps> = ({
         {width > 0 && height > 0 && (
           <View
             style={StyleSheet.absoluteFill}
-            {...panResponder.panHandlers}
+            {...(readOnly ? {} : panResponder.panHandlers)}
           >
             <Svg width={width} height={height}>
               {strokes.map((stroke, idx) => (
@@ -166,14 +169,16 @@ export const MappingCanvas: React.FC<MappingCanvasProps> = ({
         )}
       </View>
 
-      <View style={styles.toolsRow}>
-        <TouchableOpacity style={styles.toolButton} onPress={handleUndo}>
-          <Text style={styles.toolButtonText}>Deshacer</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.toolButton} onPress={handleClear}>
-          <Text style={styles.toolButtonText}>Limpiar</Text>
-        </TouchableOpacity>
-      </View>
+      {!readOnly && (
+        <View style={styles.toolsRow}>
+          <TouchableOpacity style={styles.toolButton} onPress={handleUndo}>
+            <Text style={styles.toolButtonText}>Deshacer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolButton} onPress={handleClear}>
+            <Text style={styles.toolButtonText}>Limpiar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 };
